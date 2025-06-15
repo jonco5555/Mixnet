@@ -8,3 +8,8 @@ wheels/
 
 # Virtual environments
 .venv
+.ruff_cache/
+.python-version
+*.pem
+config.yaml
+.vscode/

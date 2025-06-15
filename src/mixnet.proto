@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package mixnet;
+
+service MixServer {
+  rpc ForwardMessage (MessageRequest) returns (MessageResponse);
+}
+
+message MessageRequest {
+  string message = 1;
+  int32 round = 2;
+}
+
+message MessageResponse {
+  string status = 1;
+}
