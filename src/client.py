@@ -1,6 +1,3 @@
-import threading
-from concurrent import futures
-
 import grpc
 
 import mixnet_pb2

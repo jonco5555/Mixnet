@@ -13,65 +13,66 @@ class MixServer(mixnet_pb2_grpc.MixServerServicer):
         self._name = name
         self._port = port
         self._next_host = next_host
-        self._received_messages = {}
-        self._clients_messages = {}
         self._round = 0
         self._messages_per_round = 1
+
+        self._messages = {}
         self._cond = threading.Condition()
-        self._stop = threading.Event()
-        self._monitor_thread = threading.Thread(
-            target=self._wait_for_round_messages, daemon=True
-        )
-        # self._monitor_thread.start()
-        self._server = None
-        self.messages = []
-        threading.Thread(target=self.send).start()
+        self._final_messages = []
+
+        self._running = False
+
+        # Create a gRPC server
+        self._server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        mixnet_pb2_grpc.add_MixServerServicer_to_server(self, self._server)
+        self._server.add_insecure_port(f"[::]:{self._port}")
+
+    def start(self):
+        self._running = True
+        self._server.start()
+        # if self._next_host:
+        self._forward_thread = threading.Thread(target=self._wait_for_round_messages)
+        self._forward_thread.start()
 
     def _wait_for_round_messages(self):
-        while not self._stop.is_set():
+        while self._running:
             with self._cond:
                 self._cond.wait()
-                messages = self._received_messages.pop(self._round)
+                if not self._running:
+                    break
+
+                messages = self._messages.pop(self._round)
+                current_round = self._round
                 self._round += 1
-            # Release the lock
 
-            self._send_round_messages(messages)
+            self._send_round_messages(messages, current_round)
 
-    def _send_round_messages(self, messages: List[bytes]):
+    def _send_round_messages(self, messages: List[bytes], round: int):
         # Forward all messages for the current round
         if self._next_host:
             print(
-                f"[{self._name}] Forwarding round {self._round - 1} messages to {self._next_host}"
+                f"[{self._name}] Forwarding round {round} messages to {self._next_host}"
             )
             with grpc.insecure_channel(self._next_host) as channel:
                 stub = mixnet_pb2_grpc.MixServerStub(channel)
-                for payload in messages:
-                    req = mixnet_pb2.ForwardMessageRequest(
-                        payload=payload, round=self._round
-                    )
+                for message in messages:
+                    req = mixnet_pb2.ForwardMessageRequest(payload=message, round=round)
                     response = stub.ForwardMessage(req)
-                    print(f"[{self.name}] Server responded: {response.status}")
+                    print(f"[{self._name}] Server responded: {response.status}")
+        else:
+            print(f"[{self._name}] No next host to forward messages to.")
+            self._final_messages.extend(messages)
 
     def ForwardMessage(self, request, context):
         print(
             f"[{self._name}] Received message: '{request.payload}', round: {request.round}"
         )
-        # if self._next_host:
-        #     with self._cond:
-        #         # Store the message
-        #         if request.round not in self._received_messages:
-        #             self._received_messages[request.round] = []
-        #         self._received_messages[request.round].append(request.payload)
-        #         # Notify the monitor thread if the condition is met
-        #         if (
-        #             len(self._received_messages[self._round])
-        #             == self._messages_per_round
-        #         ):
-        #             self._cond.notify_all()
-
-        if self._next_host:
-            with self._cond:
-                self.messages.append(request.payload)
+        with self._cond:
+            # Store the message
+            if request.round not in self._messages:
+                self._messages[request.round] = []
+            self._messages[request.round].append(request.payload)
+            if len(self._messages[request.round]) == self._messages_per_round:
                 self._cond.notify()
         return mixnet_pb2.ForwardMessageResponse(
             status=f"Message '{request.payload}' received for round {request.round}"
@@ -88,14 +89,10 @@ class MixServer(mixnet_pb2_grpc.MixServerServicer):
                 response = stub.ForwardMessage(request)
                 print(f"[{self._next_host}] Server responded: {response.status}")
 
-    def start(self):
-        self._server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-        mixnet_pb2_grpc.add_MixServerServicer_to_server(self, self._server)
-        self._server.add_insecure_port(f"[::]:{self._port}")
-        self._server.start()
-        print(f"[{self._name}] Running on port {self._port}")
-        self._stop.wait()
-
-    def stop(self, grace=0):
-        self._stop.set()
-        self._server.stop(grace)
+    def stop(self):
+        self._running = False
+        with self._cond:
+            self._cond.notify()  # Wake up forwarding thread to check running flag
+        self._forward_thread.join()
+        if self._server:
+            self._server.stop(grace=5.0)
