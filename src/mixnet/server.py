@@ -4,25 +4,27 @@ from typing import List
 
 import grpc
 
-from src.mixnet_pb2 import (
+from mixnet.mixnet_pb2 import (
     ForwardMessageRequest,
     ForwardMessageResponse,
     PollMessagesResponse,
 )
-from src.mixnet_pb2_grpc import (
+from mixnet.mixnet_pb2_grpc import (
     MixServerServicer,
     MixServerStub,
     add_MixServerServicer_to_server,
 )
-from src.models import Message
+from mixnet.models import Message
 
 
 class MixServer(MixServerServicer):
-    def __init__(self, name, port, clients_addresses: List[str]):
+    def __init__(
+        self, name, port, messages_per_round: int, clients_addresses: List[str]
+    ):
         self._name = name
         self._port = port
         self._round = 0
-        self._messages_per_round = 1
+        self._messages_per_round = messages_per_round
 
         self._messages = {}
         self._cond = threading.Condition()

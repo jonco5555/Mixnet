@@ -2,9 +2,9 @@ from typing import List
 
 import grpc
 
-from src.mixnet_pb2 import ForwardMessageRequest, PollMessagesRequest
-from src.mixnet_pb2_grpc import MixServerServicer, MixServerStub
-from src.models import Message
+from mixnet.mixnet_pb2 import ForwardMessageRequest, PollMessagesRequest
+from mixnet.mixnet_pb2_grpc import MixServerServicer, MixServerStub
+from mixnet.models import Message
 
 
 class Client(MixServerServicer):
