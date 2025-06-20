@@ -2,33 +2,38 @@ import grpc
 
 import mixnet_pb2
 import mixnet_pb2_grpc
+from models import Message
 
 
 class Client(mixnet_pb2_grpc.MixServerServicer):
     def __init__(self, name, port):
         self.name = name
         self.port = port
+        self._client_id = f"localhost:{port}"
 
-    # # gRPC server method — receive messages
-    # def ForwardMessage(self, request, context):
-    #     print(
-    #         f"[{self.name}] Received message: '{request.message}' (round {request.round})"
-    #     )
-    #     return mixnet_pb2.MessageResponse(status=f"Received by {self.name}")
+    def prepare_message(
+        self, message: str, target: str, servers: list[str], round: int
+    ):
+        first_server = servers.pop()
+        servers.insert(0, target)
+        for server in servers:
+            payload = Message(payload=message.encode(), address=server)
+            message = payload.model_dump_json()
+        self.send_message(first_server, message.encode(), round)
 
-    # # Start gRPC server to receive
-    # def start_server(self):
-    #     server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
-    #     mixnet_pb2_grpc.add_MixServerServicer_to_server(self, server)
-    #     server.add_insecure_port(f"[::]:{self.port}")
-    #     server.start()
-    #     print(f"[{self.name}] Listening on port {self.port}")
-    #     return server
-
-    # gRPC client method — send message
-    def send_message(self, target_host, message, round):
-        with grpc.insecure_channel(target_host) as channel:
+    def send_message(self, server, message, round):
+        with grpc.insecure_channel(server) as channel:
             stub = mixnet_pb2_grpc.MixServerStub(channel)
             request = mixnet_pb2.ForwardMessageRequest(payload=message, round=round)
             response = stub.ForwardMessage(request)
             print(f"[{self.name}] Server responded: {response.status}")
+
+    def poll_messages(self, server_host):
+        with grpc.insecure_channel(server_host) as channel:
+            stub = mixnet_pb2_grpc.MixServerStub(channel)
+            request = mixnet_pb2.PollMessagesRequest(client_id=self._client_id)
+            response = stub.PollMessages(request)
+        for payload in response.payloads:
+            print(f"[{self.name}] Polled message {payload.decode()}")
+
+        return response.payloads

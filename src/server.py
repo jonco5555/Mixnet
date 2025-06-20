@@ -6,21 +6,23 @@ import grpc
 
 import mixnet_pb2
 import mixnet_pb2_grpc
+from models import Message
 
 
 class MixServer(mixnet_pb2_grpc.MixServerServicer):
-    def __init__(self, name, port, next_host=None):
+    def __init__(self, name, port, clients_addresses: List[str]):
         self._name = name
         self._port = port
-        self._next_host = next_host
         self._round = 0
         self._messages_per_round = 1
 
         self._messages = {}
         self._cond = threading.Condition()
-        self._final_messages = []
+        self._final_messages = {}
 
         self._running = False
+
+        self._clients_addresses = clients_addresses
 
         # Create a gRPC server
         self._server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
@@ -30,7 +32,6 @@ class MixServer(mixnet_pb2_grpc.MixServerServicer):
     def start(self):
         self._running = True
         self._server.start()
-        # if self._next_host:
         self._forward_thread = threading.Thread(target=self._wait_for_round_messages)
         self._forward_thread.start()
 
@@ -48,20 +49,24 @@ class MixServer(mixnet_pb2_grpc.MixServerServicer):
             self._send_round_messages(messages, current_round)
 
     def _send_round_messages(self, messages: List[bytes], round: int):
-        # Forward all messages for the current round
-        if self._next_host:
-            print(
-                f"[{self._name}] Forwarding round {round} messages to {self._next_host}"
-            )
-            with grpc.insecure_channel(self._next_host) as channel:
-                stub = mixnet_pb2_grpc.MixServerStub(channel)
-                for message in messages:
-                    req = mixnet_pb2.ForwardMessageRequest(payload=message, round=round)
+        for message in messages:
+            message = Message.model_validate_json(message.decode())
+            if message.address in self._clients_addresses:
+                print(
+                    f"[{self._name}] Received message for address {message.address}: {message.payload}"
+                )
+                self._final_messages[message.address] = message.payload
+            else:
+                print(
+                    f"[{self._name}] Forwarding round {round} messages to {message.address}"
+                )
+                with grpc.insecure_channel(message.address) as channel:
+                    stub = mixnet_pb2_grpc.MixServerStub(channel)
+                    req = mixnet_pb2.ForwardMessageRequest(
+                        payload=message.payload, round=round
+                    )
                     response = stub.ForwardMessage(req)
                     print(f"[{self._name}] Server responded: {response.status}")
-        else:
-            print(f"[{self._name}] No next host to forward messages to.")
-            self._final_messages.extend(messages)
 
     def ForwardMessage(self, request, context):
         print(
@@ -78,16 +83,24 @@ class MixServer(mixnet_pb2_grpc.MixServerServicer):
             status=f"Message '{request.payload}' received for round {request.round}"
         )
 
-    def send(self):
-        with self._cond:
-            self._cond.wait()
-            with grpc.insecure_channel(self._next_host) as channel:
-                stub = mixnet_pb2_grpc.MixServerStub(channel)
-                request = mixnet_pb2.ForwardMessageRequest(
-                    payload=self.messages[0], round=0
-                )
-                response = stub.ForwardMessage(request)
-                print(f"[{self._next_host}] Server responded: {response.status}")
+    def PollMessages(self, request, context):
+        client_address = request.client_id
+        print(f"[{self._name}] PollMessages called for address: {client_address}")
+        payloads = []
+        if client_address in self._final_messages:
+            payloads.append(self._final_messages.pop(client_address))
+        return mixnet_pb2.PollMessagesResponse(payloads=payloads)
+
+    # def send(self):
+    #     with self._cond:
+    #         self._cond.wait()
+    #         with grpc.insecure_channel(self._next_host) as channel:
+    #             stub = mixnet_pb2_grpc.MixServerStub(channel)
+    #             request = mixnet_pb2.ForwardMessageRequest(
+    #                 payload=self.messages[0], round=0
+    #             )
+    #             response = stub.ForwardMessage(request)
+    #             print(f"[{self._next_host}] Server responded: {response.status}")
 
     def stop(self):
         self._running = False
