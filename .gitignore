@@ -11,5 +11,4 @@ wheels/
 .ruff_cache/
 .python-version
 *.pem
-config.yaml
 .vscode/

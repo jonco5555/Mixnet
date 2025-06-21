@@ -1,41 +1,57 @@
+import os
 from typing import List
 
 import grpc
 
+from mixnet.crypto import decrypt, encrypt, generate_key_pair
 from mixnet.mixnet_pb2 import ForwardMessageRequest, PollMessagesRequest
 from mixnet.mixnet_pb2_grpc import MixServerServicer, MixServerStub
 from mixnet.models import Message
 
 
 class Client(MixServerServicer):
-    def __init__(self, name, port):
-        self.name = name
-        self.port = port
-        self._client_id = f"localhost:{port}"
+    def __init__(self, id: str, config_dir: str):
+        self._id = id
+        self._pubkey_path = os.path.join(config_dir, f"{id}_pubkey.pem")
+        self._private_key, self._private_key_pem, self._public_key = generate_key_pair(
+            self._pubkey_path
+        )
 
     def prepare_message(
-        self, message: str, target: str, servers: List[str], round: int
+        self,
+        message: str,
+        recipient_pubkey: bytes,
+        recipient_addr: str,
+        mix_pubkeys: List[bytes],
+        mix_addrs: List[str],
+        round: int,
     ):
-        first_server = servers.pop()
-        servers.insert(0, target)
-        for server in servers:
-            payload = Message(payload=message.encode(), address=server)
-            message = payload.model_dump_json()
-        self.send_message(first_server, message.encode(), round)
+        pubkeys = [recipient_pubkey] + mix_pubkeys
+        addresses = [recipient_addr] + mix_addrs
+        first_server_pubkey = pubkeys.pop()
+        first_server_addr = addresses.pop()
+        for pubkey, addr in zip(pubkeys, addresses):
+            ciphertext = encrypt(message.encode(), pubkey)
+            message = Message(payload=ciphertext, address=addr).model_dump_json()
+        ciphertext = encrypt(message.encode(), first_server_pubkey)
+        self.send_message(message.encode(), first_server_addr, round)
 
-    def send_message(self, server, message, round):
-        with grpc.insecure_channel(server) as channel:
+    def send_message(self, payload: bytes, addr: str, round):
+        with grpc.insecure_channel(addr) as channel:
             stub = MixServerStub(channel)
-            request = ForwardMessageRequest(payload=message, round=round)
+            request = ForwardMessageRequest(payload=payload, round=round)
             response = stub.ForwardMessage(request)
-            print(f"[{self.name}] Server responded: {response.status}")
+            print(f"[{self._id}] Server responded: {response.status}")
 
-    def poll_messages(self, server_host) -> List[bytes]:
+    def poll_messages(self, server_host) -> List[str]:
         with grpc.insecure_channel(server_host) as channel:
             stub = MixServerStub(channel)
-            request = PollMessagesRequest(client_id=self._client_id)
+            request = PollMessagesRequest(client_id=self._id)
             response = stub.PollMessages(request)
+        messages = []
         for payload in response.payloads:
-            print(f"[{self.name}] Polled message {payload.decode()}")
+            message = decrypt(payload, self._private_key_pem).decode()
+            messages.append(message)
+            print(f"[{self._id}] Polled message {message}")
 
-        return response.payloads
+        return messages

@@ -1,0 +1,11 @@
+messages_per_round: 2
+mix_servers:
+- id: server_1
+  address: localhost:50051
+- id: server_2
+  address: localhost:50052
+- id: server_3
+  address: localhost:50053
+clients:
+- id: client_1
+- id: client_2
