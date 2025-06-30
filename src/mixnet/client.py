@@ -12,10 +12,9 @@ from mixnet.models import Message
 class Client(MixServerServicer):
     def __init__(self, id: str, config_dir: str):
         self._id = id
-        self._pubkey_path = os.path.join(config_dir, f"{id}_pubkey.pem")
-        self._private_key, self._private_key_pem, self._public_key = generate_key_pair(
-            self._pubkey_path
-        )
+        self._pubkey_path = os.path.join(config_dir, f"{id}.key")
+        # generate_key_pair now only returns privkey_b64, pubkey_b64
+        self._privkey_b64, self._pubkey_b64 = generate_key_pair(self._pubkey_path)
 
     def prepare_message(
         self,
@@ -28,13 +27,13 @@ class Client(MixServerServicer):
     ):
         pubkeys = [recipient_pubkey] + mix_pubkeys
         addresses = [recipient_addr] + mix_addrs
-        first_server_pubkey = pubkeys.pop()
-        first_server_addr = addresses.pop()
+        # first_server_pubkey = pubkeys.pop()
+        first_server_addr = addresses[-1]
         for pubkey, addr in zip(pubkeys, addresses):
             ciphertext = encrypt(message.encode(), pubkey)
             message = Message(payload=ciphertext, address=addr).model_dump_json()
-        ciphertext = encrypt(message.encode(), first_server_pubkey)
-        self.send_message(message.encode(), first_server_addr, round)
+        # ciphertext = encrypt(message.encode(), first_server_pubkey)
+        self.send_message(ciphertext, first_server_addr, round)
 
     def send_message(self, payload: bytes, addr: str, round):
         with grpc.insecure_channel(addr) as channel:
@@ -50,7 +49,7 @@ class Client(MixServerServicer):
             response = stub.PollMessages(request)
         messages = []
         for payload in response.payloads:
-            message = decrypt(payload, self._private_key_pem).decode()
+            message = decrypt(payload, self._privkey_b64).decode()
             messages.append(message)
             print(f"[{self._id}] Polled message {message}")
 

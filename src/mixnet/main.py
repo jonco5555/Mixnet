@@ -45,12 +45,12 @@ if __name__ == "__main__":
     client_2_id = config.clients[1].id
 
     client_1_pubkey_path = os.path.join(
-        os.path.dirname(config_path), f"{client_1_id}_pubkey.pem"
+        os.path.dirname(config_path), f"{client_1_id}.key"
     )
     with open(client_1_pubkey_path, "rb") as f:
         client_1_pubkey = f.read()
     client_2_pubkey_path = os.path.join(
-        os.path.dirname(config_path), f"{client_2_id}_pubkey.pem"
+        os.path.dirname(config_path), f"{client_2_id}.key"
     )
     with open(client_2_pubkey_path, "rb") as f:
         client_2_pubkey = f.read()
@@ -58,9 +58,7 @@ if __name__ == "__main__":
     mix_pubkeys = []
     for server in config.mix_servers:
         mix_addrs.append(server.address)
-        pubkey_path = os.path.join(
-            os.path.dirname(config_path), f"{server.id}_pubkey.pem"
-        )
+        pubkey_path = os.path.join(os.path.dirname(config_path), f"{server.id}.key")
         with open(pubkey_path, "rb") as f:
             mix_pubkeys.append(f.read())
 

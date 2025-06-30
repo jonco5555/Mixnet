@@ -1,57 +1,39 @@
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import padding, rsa
+from typing import Tuple
+
+from nacl.encoding import Base64Encoder
+from nacl.exceptions import CryptoError
+from nacl.public import PrivateKey, PublicKey, SealedBox
 
 
-def generate_key_pair(pubkey_path: str) -> tuple:
-    """Generate an RSA key pair and return private and public keys."""
-    private_key = rsa.generate_private_key(
-        public_exponent=65537, key_size=2048, backend=default_backend()
-    )
-    public_key = private_key.public_key()
+def generate_key_pair(pubkey_path: str) -> Tuple[bytes, bytes]:
+    """Generate a NaCl key pair and return private and public keys (Base64 encoded)."""
+    privkey = PrivateKey.generate()
+    pubkey = privkey.public_key
 
-    # Serialize private key (PEM format)
-    private_key_pem = private_key.private_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PrivateFormat.PKCS8,
-        encryption_algorithm=serialization.NoEncryption(),
-    )
+    # Serialize keys as Base64
+    privkey_b64 = privkey.encode(encoder=Base64Encoder)
+    pubkey_b64 = pubkey.encode(encoder=Base64Encoder)
 
-    # Serialize public key (PEM format)
-    public_key_pem = public_key.public_bytes(
-        encoding=serialization.Encoding.PEM,
-        format=serialization.PublicFormat.SubjectPublicKeyInfo,
-    )
-
-    # write public key to file
+    # Write public key to file
     with open(pubkey_path, "wb") as f:
-        f.write(public_key_pem)
-    return private_key, private_key_pem, public_key_pem
+        f.write(pubkey_b64)
+    return privkey_b64, pubkey_b64
 
 
-def encrypt(message: bytes, pubkey_pem: bytes) -> bytes:
-    pubkey = serialization.load_pem_public_key(pubkey_pem, backend=default_backend())
-    ciphertext = pubkey.encrypt(
-        message,
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None,
-        ),
-    )
+def encrypt(message: bytes, pubkey_b64: bytes) -> bytes:
+    """Encrypt a message using the recipient's public key (SealedBox)."""
+    pubkey = PublicKey(pubkey_b64, encoder=Base64Encoder)
+    sealed_box = SealedBox(pubkey)
+    ciphertext = sealed_box.encrypt(message)
     return ciphertext
 
 
-def decrypt(ciphertext: bytes, privkey_pem: bytes) -> bytes:
-    privkey = serialization.load_pem_private_key(
-        privkey_pem, password=None, backend=default_backend()
-    )
-    plaintext = privkey.decrypt(
-        ciphertext,
-        padding.OAEP(
-            mgf=padding.MGF1(algorithm=hashes.SHA256()),
-            algorithm=hashes.SHA256(),
-            label=None,
-        ),
-    )
-    return plaintext
+def decrypt(ciphertext: bytes, privkey_b64: bytes) -> bytes:
+    """Decrypt a message using the recipient's private key (SealedBox)."""
+    privkey = PrivateKey(privkey_b64, encoder=Base64Encoder)
+    sealed_box = SealedBox(privkey)
+    try:
+        plaintext = sealed_box.decrypt(ciphertext)
+        return plaintext
+    except CryptoError:
+        raise ValueError("Decryption failed. Invalid key or corrupted ciphertext.")

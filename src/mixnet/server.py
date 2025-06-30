@@ -31,10 +31,8 @@ class MixServer(MixServerServicer):
         self._id = id
         self._messages_per_round = messages_per_round
         self._clients_addrs = clients_addrs
-        self._pubkey_path = os.path.join(config_dir, f"{id}_pubkey.pem")
-        self._private_key, self._private_key_pem, self._public_key = generate_key_pair(
-            self._pubkey_path
-        )
+        self._pubkey_path = os.path.join(config_dir, f"{id}.key")
+        self._privkey_b64, self._pubkey_b64 = generate_key_pair(self._pubkey_path)
         self._round = 0
         self._messages: Dict[int, List[Message]] = {}
         self._cond = threading.Condition()
@@ -58,9 +56,9 @@ class MixServer(MixServerServicer):
 
     def ForwardMessage(self, request, context):
         print(
-            f"[{self._id}] Received message: '{request.payload}', round: {request.round}"
+            f"[{self._id}] Received message from: '{context.peer()}', round: {request.round}"
         )
-        message = decrypt(request.payload, self._private_key_pem)
+        message = decrypt(request.payload, self._privkey_b64)
         message = Message.model_validate_json(message.decode())
         with self._cond:
             # Store the message
@@ -70,7 +68,7 @@ class MixServer(MixServerServicer):
             if len(self._messages[request.round]) == self._messages_per_round:
                 self._cond.notify()
         return ForwardMessageResponse(
-            status=f"Message '{message}' received for round {request.round}"
+            status=f"Message to '{message.address}' received for round {request.round}"
         )
 
     def _wait_for_round_messages(self):
@@ -118,5 +116,5 @@ class MixServer(MixServerServicer):
         self._forward_thread.join()
         if self._server:
             self._server.stop(grace=5.0)
-        if os.path.exists(self._pubkey_path):
-            os.remove(self._pubkey_path)
+        # if os.path.exists(self._pubkey_path):
+        #     os.remove(self._pubkey_path)
