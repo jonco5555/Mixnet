@@ -27,10 +27,13 @@ class MixServer(MixServerServicer):
         messages_per_round: int,
         clients_addrs: List[str],
         config_dir: str,
+        output_dir: str,
     ):
         self._id = id
         self._messages_per_round = messages_per_round
         self._clients_addrs = clients_addrs
+        self._output_dir = output_dir
+
         self._pubkey_path = os.path.join(config_dir, f"{id}.key")
         self._privkey_b64, self._pubkey_b64 = generate_key_pair(self._pubkey_path)
         self._round = 0
@@ -88,9 +91,15 @@ class MixServer(MixServerServicer):
         for message in messages:
             if message.address in self._clients_addrs:
                 print(
-                    f"[{self._id}] Received message for address {message.address} to poll: {message.payload}"
+                    f"[{self._id}] Received message for address {message.address} to poll"
                 )
                 self._final_messages[message.address] = message.payload
+                output_file = os.path.join(
+                    self._output_dir,
+                    f"{self._id}_round_{round}_{message.address.replace(':', '_')}.txt",
+                )
+                with open(output_file, "wb") as f:
+                    f.write(message.payload)
             else:
                 print(
                     f"[{self._id}] Forwarding round {round} messages to {message.address}"

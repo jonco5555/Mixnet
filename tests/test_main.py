@@ -14,7 +14,9 @@ def config(tmp_path_factory):
     # Create a minimal config.yaml and dummy key files in a temp dir
     temp_dir = tmp_path_factory.mktemp("test_config")
     temp_config_dir = os.path.join(temp_dir, "config")
+    temp_output_dir = os.path.join(temp_dir, "output")
     os.makedirs(temp_config_dir, exist_ok=True)
+    os.makedirs(temp_output_dir, exist_ok=True)
     # Example config data (adjust as needed for your schema)
     config_data = {
         "mix_servers": [
@@ -42,6 +44,7 @@ def config(tmp_path_factory):
         data = yaml.safe_load(f)
     cfg = Config(**data)
     cfg._temp_config_dir = temp_config_dir  # Attach for later use
+    cfg._temp_output_dir = temp_output_dir  # Attach for later use
     return cfg
 
 
@@ -57,6 +60,7 @@ def servers(config):
                 config.messages_per_round,
                 [client.id for client in config.clients],
                 config_dir=config._temp_config_dir,
+                output_dir=config._temp_output_dir,
             )
         )
     yield servers

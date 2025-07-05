@@ -10,6 +10,7 @@ from mixnet.server import MixServer
 
 if __name__ == "__main__":
     config_path = "config/config.yaml"
+    output_dir = "output"
     with open(config_path, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f)
     config = Config(**data)
@@ -24,6 +25,7 @@ if __name__ == "__main__":
                 config.messages_per_round,
                 [client.id for client in config.clients],
                 config_dir=os.path.dirname(config_path),
+                output_dir=output_dir,
             )
         )
 
