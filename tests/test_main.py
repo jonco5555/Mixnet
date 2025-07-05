@@ -1,7 +1,8 @@
+import asyncio
 import os
-import time
 
 import pytest
+import pytest_asyncio
 import yaml
 
 from mixnet.client import Client
@@ -48,24 +49,24 @@ def config(tmp_path_factory):
     return cfg
 
 
-@pytest.fixture
-def servers(config):
+@pytest_asyncio.fixture
+async def servers(config):
     servers = []
     for server in config.mix_servers:
         port = int(server.address.split(":")[1])
-        servers.append(
-            MixServer(
-                server.id,
-                port,
-                config.messages_per_round,
-                [client.id for client in config.clients],
-                config_dir=config._temp_config_dir,
-                output_dir=config._temp_output_dir,
-            )
+        server = MixServer(
+            server.id,
+            port,
+            config.messages_per_round,
+            [client.id for client in config.clients],
+            config_dir=config._temp_config_dir,
+            output_dir=config._temp_output_dir,
         )
-    yield servers
+        await server.start()
+        servers.append(server)
+    yield
     for server in servers:
-        server.stop()
+        await server.stop()
 
 
 @pytest.fixture
@@ -81,8 +82,8 @@ def clients(config):
     return clients
 
 
-def test_message_exchange(servers, clients, config):
-    [server.start() for server in servers]
+@pytest.mark.asyncio
+async def test_message_exchange(servers, clients, config):
     client_1 = clients[0]
     client_1_id = config.clients[0].id
     client_2 = clients[1]
@@ -102,24 +103,28 @@ def test_message_exchange(servers, clients, config):
         with open(pubkey_path, "rb") as f:
             mix_pubkeys.append(f.read())
 
-    client_1.prepare_message(
-        "Hello, client2!",
-        client_2_pubkey,
-        client_2_id,
-        mix_pubkeys,
-        mix_addrs,
-        0,
+    await asyncio.gather(
+        client_1.prepare_message(
+            "Hello, client2!",
+            client_2_pubkey,
+            client_2_id,
+            mix_pubkeys,
+            mix_addrs,
+            0,
+        ),
+        client_2.prepare_message(
+            "Hello, client1!",
+            client_1_pubkey,
+            client_1_id,
+            mix_pubkeys,
+            mix_addrs,
+            0,
+        ),
     )
-    client_2.prepare_message(
-        "Hello, client1!",
-        client_1_pubkey,
-        client_1_id,
-        mix_pubkeys,
-        mix_addrs,
-        0,
+    await asyncio.sleep(1)
+    messages = await asyncio.gather(
+        client_1.poll_messages(config.mix_servers[0].address),
+        client_2.poll_messages(config.mix_servers[0].address),
     )
-    time.sleep(1)
-    msg1 = client_1.poll_messages(config.mix_servers[0].address)
-    msg2 = client_2.poll_messages(config.mix_servers[0].address)
-    assert "Hello, client2!" in str(msg2) or "Hello, client2!" in str(msg1)
-    assert "Hello, client1!" in str(msg1) or "Hello, client1!" in str(msg2)
+    assert "Hello, client2!" in messages[1]
+    assert "Hello, client1!" in messages[0]

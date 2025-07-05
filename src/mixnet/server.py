@@ -1,6 +1,5 @@
+import asyncio
 import os
-import threading
-from concurrent import futures
 from typing import Dict, List
 
 import grpc
@@ -38,32 +37,27 @@ class MixServer(MixServerServicer):
         self._privkey_b64, self._pubkey_b64 = generate_key_pair(self._pubkey_path)
         self._round = 0
         self._messages: Dict[int, List[Message]] = {}
-        self._cond = threading.Condition()
+        self._cond = asyncio.Condition()
         self._final_messages: Dict[str, List[bytes]] = {}
         self._running = False
 
         # Create a gRPC server
-        self._server = grpc.server(futures.ThreadPoolExecutor(max_workers=10))
+        self._server = grpc.aio.server()
         add_MixServerServicer_to_server(self, self._server)
         self._server.add_insecure_port(f"[::]:{port}")
 
-    def start(self):
+    async def start(self):
         self._running = True
-        self._server.start()
-        self._forward_thread = threading.Thread(target=self._wait_for_round_messages)
-        self._forward_thread.start()
-        # self._server.wait_for_termination()
-        # with self._cond:
-        #     self._cond.notify()  # Wake up forwarding thread to check running flag
-        # self._forward_thread.join()
+        await self._server.start()
+        self._wait_future = asyncio.create_task(self._wait_for_round_messages())
 
-    def ForwardMessage(self, request, context):
+    async def ForwardMessage(self, request, context):
         print(
             f"[{self._id}] Received message from: '{context.peer()}', round: {request.round}"
         )
         message = decrypt(request.payload, self._privkey_b64)
         message = Message.model_validate_json(message.decode())
-        with self._cond:
+        async with self._cond:
             # Store the message
             if request.round not in self._messages:
                 self._messages[request.round] = []
@@ -74,10 +68,10 @@ class MixServer(MixServerServicer):
             status=f"Message to '{message.address}' received for round {request.round}"
         )
 
-    def _wait_for_round_messages(self):
+    async def _wait_for_round_messages(self):
         while self._running:
-            with self._cond:
-                self._cond.wait()
+            async with self._cond:
+                await self._cond.wait()
                 if not self._running:
                     break
 
@@ -85,9 +79,9 @@ class MixServer(MixServerServicer):
                 current_round = self._round
                 self._round += 1
 
-            self._send_round_messages(messages, current_round)
+            await self._send_round_messages(messages, current_round)
 
-    def _send_round_messages(self, messages: List[Message], round: int):
+    async def _send_round_messages(self, messages: List[Message], round: int):
         for message in messages:
             if message.address in self._clients_addrs:
                 print(
@@ -104,13 +98,13 @@ class MixServer(MixServerServicer):
                 print(
                     f"[{self._id}] Forwarding round {round} messages to {message.address}"
                 )
-                with grpc.insecure_channel(message.address) as channel:
+                async with grpc.aio.insecure_channel(message.address) as channel:
                     stub = MixServerStub(channel)
                     req = ForwardMessageRequest(payload=message.payload, round=round)
-                    response = stub.ForwardMessage(req)
+                    response = await stub.ForwardMessage(req)
                     print(f"[{self._id}] Server responded: {response.status}")
 
-    def PollMessages(self, request, context):
+    async def PollMessages(self, request, context):
         client_address = request.client_id
         print(f"[{self._id}] PollMessages called for address: {client_address}")
         payloads = []
@@ -118,12 +112,13 @@ class MixServer(MixServerServicer):
             payloads.append(self._final_messages.pop(client_address))
         return PollMessagesResponse(payloads=payloads)
 
-    def stop(self):
+    async def stop(self):
         self._running = False
-        with self._cond:
+        async with self._cond:
             self._cond.notify()  # Wake up forwarding thread to check running flag
-        self._forward_thread.join()
         if self._server:
-            self._server.stop(grace=5.0)
+            await self._server.stop(grace=5.0)
+        if self._wait_future:
+            await self._wait_future
         # if os.path.exists(self._pubkey_path):
         #     os.remove(self._pubkey_path)

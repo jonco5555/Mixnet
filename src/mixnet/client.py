@@ -13,10 +13,9 @@ class Client(MixServerServicer):
     def __init__(self, id: str, config_dir: str):
         self._id = id
         self._pubkey_path = os.path.join(config_dir, f"{id}.key")
-        # generate_key_pair now only returns privkey_b64, pubkey_b64
         self._privkey_b64, self._pubkey_b64 = generate_key_pair(self._pubkey_path)
 
-    def prepare_message(
+    async def prepare_message(
         self,
         message: str,
         recipient_pubkey: bytes,
@@ -27,26 +26,24 @@ class Client(MixServerServicer):
     ):
         pubkeys = [recipient_pubkey] + mix_pubkeys
         addresses = [recipient_addr] + mix_addrs
-        # first_server_pubkey = pubkeys.pop()
         first_server_addr = addresses[-1]
         for pubkey, addr in zip(pubkeys, addresses):
             ciphertext = encrypt(message.encode(), pubkey)
             message = Message(payload=ciphertext, address=addr).model_dump_json()
-        # ciphertext = encrypt(message.encode(), first_server_pubkey)
-        self.send_message(ciphertext, first_server_addr, round)
+        await self.send_message(ciphertext, first_server_addr, round)
 
-    def send_message(self, payload: bytes, addr: str, round):
-        with grpc.insecure_channel(addr) as channel:
+    async def send_message(self, payload: bytes, addr: str, round):
+        async with grpc.aio.insecure_channel(addr) as channel:
             stub = MixServerStub(channel)
             request = ForwardMessageRequest(payload=payload, round=round)
-            response = stub.ForwardMessage(request)
+            response = await stub.ForwardMessage(request)
             print(f"[{self._id}] Server responded: {response.status}")
 
-    def poll_messages(self, server_host) -> List[str]:
-        with grpc.insecure_channel(server_host) as channel:
+    async def poll_messages(self, server_host) -> List[str]:
+        async with grpc.aio.insecure_channel(server_host) as channel:
             stub = MixServerStub(channel)
             request = PollMessagesRequest(client_id=self._id)
-            response = stub.PollMessages(request)
+            response = await stub.PollMessages(request)
         messages = []
         for payload in response.payloads:
             message = decrypt(payload, self._privkey_b64).decode()

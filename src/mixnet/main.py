@@ -1,5 +1,5 @@
+import asyncio
 import os
-import time
 from typing import List
 
 import yaml
@@ -8,7 +8,8 @@ from mixnet.client import Client
 from mixnet.models import Config
 from mixnet.server import MixServer
 
-if __name__ == "__main__":
+
+async def main():
     config_path = "config/config.yaml"
     output_dir = "output"
     with open(config_path, "r", encoding="utf-8") as f:
@@ -29,8 +30,9 @@ if __name__ == "__main__":
             )
         )
 
-    [server.start() for server in servers]
-    print("Servers startes successfully")
+    # Start servers asynchronously
+    await asyncio.gather(*(server.start() for server in servers))
+    print("Servers started successfully")
 
     clients: List[Client] = []
     for client in config.clients:
@@ -64,27 +66,37 @@ if __name__ == "__main__":
         with open(pubkey_path, "rb") as f:
             mix_pubkeys.append(f.read())
 
-    client_1.prepare_message(
-        "Hello, client2!",
-        client_2_pubkey,
-        client_2_id,
-        mix_pubkeys,
-        mix_addrs,
-        0,
+    await asyncio.gather(
+        client_1.prepare_message(
+            "Hello, client2!",
+            client_2_pubkey,
+            client_2_id,
+            mix_pubkeys,
+            mix_addrs,
+            0,
+        ),
+        client_2.prepare_message(
+            "Hello, client1!",
+            client_1_pubkey,
+            client_1_id,
+            mix_pubkeys,
+            mix_addrs,
+            0,
+        ),
     )
-    client_2.prepare_message(
-        "Hello, client1!",
-        client_1_pubkey,
-        client_1_id,
-        mix_pubkeys,
-        mix_addrs,
-        0,
+    await asyncio.sleep(1)
+    messages = await asyncio.gather(
+        client_1.poll_messages(config.mix_servers[0].address),
+        client_2.poll_messages(config.mix_servers[0].address),
     )
-    time.sleep(1)
-    print(client_1.poll_messages(config.mix_servers[0].address))
-    print(client_2.poll_messages(config.mix_servers[0].address))
-    [server.stop() for server in servers]
+    print(messages[0])
+    print(messages[1])
+    await asyncio.gather(*(server.stop() for server in servers))
     print("Servers started and stopped successfully.")
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
 
     # s1 = MixServer("server1", 50051, 2, ["localhost:50055", "localhost:50054"])
     # s2 = MixServer("server2", 50052, 2, ["localhost:50055", "localhost:50054"])
