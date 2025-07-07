@@ -20,7 +20,7 @@ _sym_db = _symbol_database.Default()
 
 
 DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(
-    b'\n\x0cmixnet.proto\x12\x06mixnet"7\n\x15\x46orwardMessageRequest\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\x12\r\n\x05round\x18\x02 \x01(\x05"(\n\x16\x46orwardMessageResponse\x12\x0e\n\x06status\x18\x01 \x01(\t"(\n\x13PollMessagesRequest\x12\x11\n\tclient_id\x18\x01 \x01(\t"(\n\x14PollMessagesResponse\x12\x10\n\x08payloads\x18\x01 \x03(\x0c\x32\xa7\x01\n\tMixServer\x12O\n\x0e\x46orwardMessage\x12\x1d.mixnet.ForwardMessageRequest\x1a\x1e.mixnet.ForwardMessageResponse\x12I\n\x0cPollMessages\x12\x1b.mixnet.PollMessagesRequest\x1a\x1c.mixnet.PollMessagesResponseb\x06proto3'
+    b'\n\x0cmixnet.proto\x12\x06mixnet"7\n\x15\x46orwardMessageRequest\x12\x0f\n\x07payload\x18\x01 \x01(\x0c\x12\r\n\x05round\x18\x02 \x01(\x05"(\n\x16\x46orwardMessageResponse\x12\x0e\n\x06status\x18\x01 \x01(\t"(\n\x13PollMessagesRequest\x12\x11\n\tclient_id\x18\x01 \x01(\t"(\n\x14PollMessagesResponse\x12\x10\n\x08payloads\x18\x01 \x03(\x0c"$\n\x0fRegisterRequest\x12\x11\n\tclient_id\x18\x01 \x01(\t""\n\x10RegisterResponse\x12\x0e\n\x06status\x18\x01 \x01(\x08"(\n\x13WaitForStartRequest\x12\x11\n\tclient_id\x18\x01 \x01(\t"=\n\x14WaitForStartResponse\x12\r\n\x05ready\x18\x01 \x01(\x08\x12\x16\n\x0eround_duration\x18\x02 \x01(\x05\x32\xb1\x02\n\tMixServer\x12O\n\x0e\x46orwardMessage\x12\x1d.mixnet.ForwardMessageRequest\x1a\x1e.mixnet.ForwardMessageResponse\x12I\n\x0cPollMessages\x12\x1b.mixnet.PollMessagesRequest\x1a\x1c.mixnet.PollMessagesResponse\x12=\n\x08Register\x12\x17.mixnet.RegisterRequest\x1a\x18.mixnet.RegisterResponse\x12I\n\x0cWaitForStart\x12\x1b.mixnet.WaitForStartRequest\x1a\x1c.mixnet.WaitForStartResponseb\x06proto3'
 )
 
 _globals = globals()
@@ -36,6 +36,14 @@ if not _descriptor._USE_C_DESCRIPTORS:
     _globals["_POLLMESSAGESREQUEST"]._serialized_end = 163
     _globals["_POLLMESSAGESRESPONSE"]._serialized_start = 165
     _globals["_POLLMESSAGESRESPONSE"]._serialized_end = 205
-    _globals["_MIXSERVER"]._serialized_start = 208
-    _globals["_MIXSERVER"]._serialized_end = 375
+    _globals["_REGISTERREQUEST"]._serialized_start = 207
+    _globals["_REGISTERREQUEST"]._serialized_end = 243
+    _globals["_REGISTERRESPONSE"]._serialized_start = 245
+    _globals["_REGISTERRESPONSE"]._serialized_end = 279
+    _globals["_WAITFORSTARTREQUEST"]._serialized_start = 281
+    _globals["_WAITFORSTARTREQUEST"]._serialized_end = 321
+    _globals["_WAITFORSTARTRESPONSE"]._serialized_start = 323
+    _globals["_WAITFORSTARTRESPONSE"]._serialized_end = 384
+    _globals["_MIXSERVER"]._serialized_start = 387
+    _globals["_MIXSERVER"]._serialized_end = 692
 # @@protoc_insertion_point(module_scope)
