@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package mixnet;
+
+service MixServer {
+  rpc ForwardMessage (ForwardMessageRequest) returns (ForwardMessageResponse);
+  rpc PollMessages (PollMessagesRequest) returns (PollMessagesResponse);
+}
+
+message ForwardMessageRequest {
+  bytes payload = 1;
+  int32 round = 2;
+}
+
+message ForwardMessageResponse {
+  string status = 1;
+}
+
+message PollMessagesRequest {
+    string client_id = 1;
+}
+
+message PollMessagesResponse {
+    repeated bytes payloads = 1;
+}
