@@ -44,9 +44,7 @@ class Client(MixServerServicer):
                 print(
                     f"[{self._id}] No messages for round {self._round}, creating a dummy"
                 )
-                await self.prepare_message(
-                    "dummy message", self._pubkey_b64, self._id, self._round
-                )
+                await self.prepare_message("dummy", self._pubkey_b64, self._id)
             await self.send_message(
                 self._messages[self._round], self._mix_addrs[0], self._round
             )
@@ -85,11 +83,15 @@ class Client(MixServerServicer):
         message: str,
         recipient_pubkey: bytes,
         recipient_addr: str,
-        round: int,
     ):
+        round = self._round
         if round in self._messages:
             print(f"[{self._id}] Message for round {round} already prepared")
-            return
+            if message == "dummy":
+                print(f"[{self._id}] Dummy message for round {round} ignored")
+                return
+            round += 1
+        print(f"[{self._id}] Preparing message for round {round} - {message}")
         pubkeys = [recipient_pubkey] + self._mix_pubkeys[::-1]
         addresses = [recipient_addr] + self._mix_addrs[::-1]
         for pubkey, addr in zip(pubkeys, addresses):

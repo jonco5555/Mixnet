@@ -54,41 +54,36 @@ async def main():
         )
 
     client_1 = clients[0]
-    # client_1_id = config.clients[0].id
+    client_1_id = config.clients[0].id
     client_2 = clients[1]
-    # client_2_id = config.clients[1].id
+    client_2_id = config.clients[1].id
 
-    # client_1_pubkey_path = os.path.join(
-    #     os.path.dirname(config_path), f"{client_1_id}.key"
-    # )
-    # with open(client_1_pubkey_path, "rb") as f:
-    #     client_1_pubkey = f.read()
-    # client_2_pubkey_path = os.path.join(
-    #     os.path.dirname(config_path), f"{client_2_id}.key"
-    # )
-    # with open(client_2_pubkey_path, "rb") as f:
-    #     client_2_pubkey = f.read()
+    client_1_pubkey_path = os.path.join(
+        os.path.dirname(config_path), f"{client_1_id}.key"
+    )
+    with open(client_1_pubkey_path, "rb") as f:
+        client_1_pubkey = f.read()
+    client_2_pubkey_path = os.path.join(
+        os.path.dirname(config_path), f"{client_2_id}.key"
+    )
+    with open(client_2_pubkey_path, "rb") as f:
+        client_2_pubkey = f.read()
 
     await asyncio.gather(client_1.start(), client_2.start())
+    await asyncio.sleep(1)
 
-    # await asyncio.gather(
-    #     client_1.prepare_message(
-    #         "Hello, client2!",
-    #         client_2_pubkey,
-    #         client_2_id,
-    #         mix_pubkeys,
-    #         mix_addrs,
-    #         0,
-    #     ),
-    #     client_2.prepare_message(
-    #         "Hello, client1!",
-    #         client_1_pubkey,
-    #         client_1_id,
-    #         mix_pubkeys,
-    #         mix_addrs,
-    #         0,
-    #     ),
-    # )
+    await asyncio.gather(
+        client_1.prepare_message(
+            "Hello, client2!",
+            client_2_pubkey,
+            client_2_id,
+        ),
+        client_2.prepare_message(
+            "Hello, client1!",
+            client_1_pubkey,
+            client_1_id,
+        ),
+    )
     await asyncio.sleep(3)
     await asyncio.gather(*(client.stop() for client in clients))
     await asyncio.sleep(1)
