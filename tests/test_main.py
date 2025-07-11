@@ -55,9 +55,7 @@ async def servers_setup(config: Config):
     mix_addrs = []
     mix_pubkeys = []
     for server_config in config.mix_servers:
-        print(server_config.address)
         port = int(server_config.address.split(":")[1])
-        print(port)
         server = MixServer(
             server_config.id,
             port,
@@ -66,13 +64,12 @@ async def servers_setup(config: Config):
             config_dir=config._temp_config_dir,
             output_dir=config._temp_output_dir,
         )
-        await server.start()
         servers.append(server)
         mix_addrs.append(server_config.address)
         mix_pubkeys.append(server._pubkey_b64)
+    await asyncio.gather(*(server.start() for server in servers))
     yield mix_addrs, mix_pubkeys
-    for server in servers:
-        await server.stop()
+    await asyncio.gather(*(server.stop() for server in servers))
 
 
 @pytest_asyncio.fixture
@@ -89,12 +86,10 @@ async def clients_setup(config: Config, servers_setup):
             mix_addrs=mix_addrs,
         )
         clients.append(client)
-        await client.start()
         clients_addrs.append(client_config.id)
         clients_pubkeys.append(client._pubkey_b64)
+    await asyncio.gather(*(client.start() for client in clients))
     yield clients, clients_addrs, clients_pubkeys
-    for client in clients:
-        await client.stop()
 
 
 @pytest.mark.asyncio
@@ -112,9 +107,12 @@ async def test_message_exchange(clients_setup, config):
         client_2.prepare_message("Hello, client1!", client_1_pubkey, client_1_id),
     )
     await asyncio.sleep(1)
+    await asyncio.gather(*(client.stop() for client in clients))
+    await asyncio.sleep(1)
     messages = await asyncio.gather(
         client_1.poll_messages(config.mix_servers[2].address),
         client_2.poll_messages(config.mix_servers[2].address),
     )
+    print(messages)
     assert "Hello, client2!" in messages[1]
     assert "Hello, client1!" in messages[0]
