@@ -34,12 +34,22 @@ async def main():
     await asyncio.gather(*(server.start() for server in servers))
     print("Servers started successfully")
 
+    mix_addrs = []
+    mix_pubkeys = []
+    for server in config.mix_servers:
+        mix_addrs.append(server.address)
+        pubkey_path = os.path.join(os.path.dirname(config_path), f"{server.id}.key")
+        with open(pubkey_path, "rb") as f:
+            mix_pubkeys.append(f.read())
+
     clients: List[Client] = []
     for client in config.clients:
         clients.append(
             Client(
                 client.id,
                 config_dir=os.path.dirname(config_path),
+                mix_pubkeys=mix_pubkeys,
+                mix_addrs=mix_addrs,
             )
         )
 
@@ -58,41 +68,34 @@ async def main():
     )
     with open(client_2_pubkey_path, "rb") as f:
         client_2_pubkey = f.read()
-    mix_addrs = []
-    mix_pubkeys = []
-    for server in config.mix_servers:
-        mix_addrs.append(server.address)
-        pubkey_path = os.path.join(os.path.dirname(config_path), f"{server.id}.key")
-        with open(pubkey_path, "rb") as f:
-            mix_pubkeys.append(f.read())
+
+    await asyncio.gather(client_1.start(), client_2.start())
+    await asyncio.sleep(1)
 
     await asyncio.gather(
         client_1.prepare_message(
             "Hello, client2!",
             client_2_pubkey,
             client_2_id,
-            mix_pubkeys,
-            mix_addrs,
-            0,
         ),
         client_2.prepare_message(
             "Hello, client1!",
             client_1_pubkey,
             client_1_id,
-            mix_pubkeys,
-            mix_addrs,
-            0,
         ),
     )
+    await asyncio.sleep(3)
+    await asyncio.gather(*(client.stop() for client in clients))
     await asyncio.sleep(1)
     messages = await asyncio.gather(
-        client_1.poll_messages(config.mix_servers[0].address),
-        client_2.poll_messages(config.mix_servers[0].address),
+        client_1.poll_messages(config.mix_servers[2].address),
+        client_2.poll_messages(config.mix_servers[2].address),
     )
     print(messages[0])
     print(messages[1])
+    await asyncio.sleep(1)
     await asyncio.gather(*(server.stop() for server in servers))
-    print("Servers started and stopped successfully.")
+    print("Servers and clients stopped successfully.")
 
 
 if __name__ == "__main__":

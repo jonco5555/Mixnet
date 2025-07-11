@@ -49,6 +49,18 @@ class MixServerStub(object):
             response_deserializer=mixnet__pb2.PollMessagesResponse.FromString,
             _registered_method=True,
         )
+        self.Register = channel.unary_unary(
+            "/mixnet.MixServer/Register",
+            request_serializer=mixnet__pb2.RegisterRequest.SerializeToString,
+            response_deserializer=mixnet__pb2.RegisterResponse.FromString,
+            _registered_method=True,
+        )
+        self.WaitForStart = channel.unary_unary(
+            "/mixnet.MixServer/WaitForStart",
+            request_serializer=mixnet__pb2.WaitForStartRequest.SerializeToString,
+            response_deserializer=mixnet__pb2.WaitForStartResponse.FromString,
+            _registered_method=True,
+        )
 
 
 class MixServerServicer(object):
@@ -66,6 +78,18 @@ class MixServerServicer(object):
         context.set_details("Method not implemented!")
         raise NotImplementedError("Method not implemented!")
 
+    def Register(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def WaitForStart(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
 
 def add_MixServerServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -78,6 +102,16 @@ def add_MixServerServicer_to_server(servicer, server):
             servicer.PollMessages,
             request_deserializer=mixnet__pb2.PollMessagesRequest.FromString,
             response_serializer=mixnet__pb2.PollMessagesResponse.SerializeToString,
+        ),
+        "Register": grpc.unary_unary_rpc_method_handler(
+            servicer.Register,
+            request_deserializer=mixnet__pb2.RegisterRequest.FromString,
+            response_serializer=mixnet__pb2.RegisterResponse.SerializeToString,
+        ),
+        "WaitForStart": grpc.unary_unary_rpc_method_handler(
+            servicer.WaitForStart,
+            request_deserializer=mixnet__pb2.WaitForStartRequest.FromString,
+            response_serializer=mixnet__pb2.WaitForStartResponse.SerializeToString,
         ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -140,6 +174,66 @@ class MixServer(object):
             "/mixnet.MixServer/PollMessages",
             mixnet__pb2.PollMessagesRequest.SerializeToString,
             mixnet__pb2.PollMessagesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def Register(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/mixnet.MixServer/Register",
+            mixnet__pb2.RegisterRequest.SerializeToString,
+            mixnet__pb2.RegisterResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def WaitForStart(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/mixnet.MixServer/WaitForStart",
+            mixnet__pb2.WaitForStartRequest.SerializeToString,
+            mixnet__pb2.WaitForStartResponse.FromString,
             options,
             channel_credentials,
             insecure,

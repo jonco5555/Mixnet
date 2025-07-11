@@ -5,6 +5,8 @@ package mixnet;
 service MixServer {
   rpc ForwardMessage (ForwardMessageRequest) returns (ForwardMessageResponse);
   rpc PollMessages (PollMessagesRequest) returns (PollMessagesResponse);
+  rpc Register (RegisterRequest) returns (RegisterResponse);
+  rpc WaitForStart (WaitForStartRequest) returns (WaitForStartResponse);
 }
 
 message ForwardMessageRequest {
@@ -22,4 +24,21 @@ message PollMessagesRequest {
 
 message PollMessagesResponse {
     repeated bytes payloads = 1;
+}
+
+message RegisterRequest {
+  string client_id = 1;
+}
+
+message RegisterResponse {
+  bool status = 1;
+}
+
+message WaitForStartRequest {
+  string client_id = 1;
+}
+
+message WaitForStartResponse {
+  bool ready = 1;
+  int32 round_duration = 2;  // Round duration in seconds
 }

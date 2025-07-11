@@ -9,6 +9,8 @@ from mixnet.mixnet_pb2 import (
     ForwardMessageRequest,
     ForwardMessageResponse,
     PollMessagesResponse,
+    RegisterResponse,
+    WaitForStartResponse,
 )
 from mixnet.mixnet_pb2_grpc import (
     MixServerServicer,
@@ -27,11 +29,13 @@ class MixServer(MixServerServicer):
         clients_addrs: List[str],
         config_dir: str,
         output_dir: str,
+        round_duration: int = 1,
     ):
         self._id = id
         self._messages_per_round = messages_per_round
         self._clients_addrs = clients_addrs
         self._output_dir = output_dir
+        self._round_duration = round_duration
 
         self._pubkey_path = os.path.join(config_dir, f"{id}.key")
         self._privkey_b64, self._pubkey_b64 = generate_key_pair(self._pubkey_path)
@@ -40,6 +44,9 @@ class MixServer(MixServerServicer):
         self._cond = asyncio.Condition()
         self._final_messages: Dict[str, List[bytes]] = {}
         self._running = False
+        self._registered_clients = set()
+        self._start_event = asyncio.Event()
+        self._wait_future = None
 
         # Create a gRPC server
         self._server = grpc.aio.server()
@@ -50,6 +57,22 @@ class MixServer(MixServerServicer):
         self._running = True
         await self._server.start()
         self._wait_future = asyncio.create_task(self._wait_for_round_messages())
+
+    async def Register(self, request, context):
+        print(f"[{self._id}] Register called by: {request.client_id}")
+        if len(self._registered_clients) >= self._messages_per_round:
+            return RegisterResponse(status=False)
+        self._registered_clients.add(request.client_id)
+        if len(self._registered_clients) == self._messages_per_round:
+            self._start_event.set()
+        return RegisterResponse(status=True)
+
+    async def WaitForStart(self, request, context):
+        print(f"[{self._id}] WaitForStart called by: {context.peer()}")
+        if not self._running:
+            return WaitForStartResponse(ready=False)
+        await self._start_event.wait()
+        return WaitForStartResponse(ready=True, round_duration=self._round_duration)
 
     async def ForwardMessage(self, request, context):
         print(
@@ -87,7 +110,9 @@ class MixServer(MixServerServicer):
                 print(
                     f"[{self._id}] Received message for address {message.address} to poll"
                 )
-                self._final_messages[message.address] = message.payload
+                if message.address not in self._final_messages:
+                    self._final_messages[message.address] = []
+                self._final_messages[message.address].append(message.payload)
                 output_file = os.path.join(
                     self._output_dir,
                     f"{self._id}_round_{round}_{message.address.replace(':', '_')}.txt",
@@ -107,9 +132,7 @@ class MixServer(MixServerServicer):
     async def PollMessages(self, request, context):
         client_address = request.client_id
         print(f"[{self._id}] PollMessages called for address: {client_address}")
-        payloads = []
-        if client_address in self._final_messages:
-            payloads.append(self._final_messages.pop(client_address))
+        payloads = self._final_messages.pop(client_address, [])
         return PollMessagesResponse(payloads=payloads)
 
     async def stop(self):
