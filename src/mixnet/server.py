@@ -36,6 +36,8 @@ class MixServer(MixServerServicer):
         self._clients_addrs = clients_addrs
         self._output_dir = output_dir
         self._round_duration = round_duration
+        self._port = port
+        self._server = None
 
         self._pubkey_path = os.path.join(config_dir, f"{id}.key")
         self._privkey_b64, self._pubkey_b64 = generate_key_pair(self._pubkey_path)
@@ -48,12 +50,11 @@ class MixServer(MixServerServicer):
         self._start_event = asyncio.Event()
         self._wait_future = None
 
+    async def start(self):
         # Create a gRPC server
         self._server = grpc.aio.server()
         add_MixServerServicer_to_server(self, self._server)
-        self._server.add_insecure_port(f"[::]:{port}")
-
-    async def start(self):
+        self._server.add_insecure_port(f"[::]:{self._port}")
         self._running = True
         await self._server.start()
         self._wait_future = asyncio.create_task(self._wait_for_round_messages())

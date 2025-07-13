@@ -1,3 +1,7 @@
+import asyncio
+import os
+import signal
+
 import typer
 import yaml
 from typing_extensions import Annotated
@@ -15,46 +19,83 @@ def load_config(config_path):
     return Config(**data)
 
 
+async def start_peer(peer: MixServer | Client):
+    loop = asyncio.get_running_loop()
+    stop_event = asyncio.Event()
+
+    def _signal_handler():
+        print(f"Received stop signal. Shutting down server {server._id}")
+        stop_event.set()
+
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        try:
+            loop.add_signal_handler(sig, _signal_handler)
+        except NotImplementedError:
+            pass  # Signal are not be available on Windows
+
+    await peer.start()
+    print(f"{peer.__class__.__name__} {peer._id} started successfully")
+    try:
+        await stop_event.wait()
+    except Exception as e:
+        print(f"Error during server operation: {e}")
+    finally:
+        await peer.stop()
+
+
 @app.command()
-async def server(
-    config: Annotated[str, typer.Argument(help="Path to config file")],
-    id: Annotated[str, typer.Argument(help="Server ID")],
+def server(
+    id: Annotated[str, typer.Option(help="Server ID")],
+    config_path: Annotated[str, typer.Option("--config", help="Path to config file")],
+    output_dir: Annotated[
+        str, typer.Option(help="Output directory for last server logs")
+    ],
 ):
-    """Run as server using the given config file and server id."""
-    config_obj = load_config(config)
-    server_entity = next((s for s in config_obj.mix_servers if s.id == id), None)
-    if not server_entity:
+    config = load_config(config_path)
+    server_config = next((s for s in config.mix_servers if s.id == id), None)
+    if not server_config:
         typer.echo(f"Server with id '{id}' not found in config.")
         raise typer.Exit(code=1)
-    client_addresses = [f"{c.ip}:{c.port}" for c in config_obj.clients]
-    s = MixServer(
-        server_entity.id,
-        server_entity.port,
-        config_obj.messages_per_round,
-        client_addresses,
+    server = MixServer(
+        id,
+        int(server_config.address.split(":")[1]),
+        config.messages_per_round,
+        [client.id for client in config.clients],
+        config_dir=os.path.dirname(config_path),
+        output_dir=output_dir,
     )
-    s.start()
-    typer.echo(f"Server '{id}' started. Press Ctrl+C to stop.")
-    try:
-        while True:
-            pass
-    except KeyboardInterrupt:
-        s.stop()
-        typer.echo(f"Server '{id}' stopped.")
+    asyncio.run(start_peer(server))
+
+
+def servers_data(config_path: str, config: Config):
+    mix_addrs = []
+    mix_pubkeys = []
+    for server in config.mix_servers:
+        mix_addrs.append(server.address)
+        pubkey_path = os.path.join(os.path.dirname(config_path), f"{server.id}.key")
+        with open(pubkey_path, "rb") as f:
+            mix_pubkeys.append(f.read())
+    return mix_addrs, mix_pubkeys
 
 
 @app.command()
-def client(config: str, client_id: str):
-    """Run as client using the given config file and client id."""
-    config_obj = load_config(config)
-    client_entity = next((c for c in config_obj.clients if c.id == client_id), None)
-    if not client_entity:
-        typer.echo(f"Client with id '{client_id}' not found in config.")
+def client(
+    id: Annotated[str, typer.Option(help="Client ID")],
+    config_path: Annotated[str, typer.Option("--config", help="Path to config file")],
+):
+    config = load_config(config_path)
+    client_config = next((c for c in config.clients if c.id == id), None)
+    if not client_config:
+        typer.echo(f"Client with id '{id}' not found in config.")
         raise typer.Exit(code=1)
-    _ = Client(client_entity.id, client_entity.port)
-    typer.echo(
-        f"Client '{client_id}' ready. Implement message sending logic as needed."
+    mix_addrs, mix_pubkeys = servers_data(config_path, config)
+    client = Client(
+        client_config.id,
+        config_dir=os.path.dirname(config_path),
+        mix_pubkeys=mix_pubkeys,
+        mix_addrs=mix_addrs,
     )
+    asyncio.run(start_peer(client))
 
 
 if __name__ == "__main__":
