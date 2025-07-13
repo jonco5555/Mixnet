@@ -2,11 +2,14 @@ import asyncio
 import os
 import signal
 
+import grpc
 import typer
 import yaml
 from typing_extensions import Annotated
 
+import mixnet.mixnet_pb2 as pb2
 from mixnet.client import Client
+from mixnet.mixnet_pb2_grpc import ClientStub
 from mixnet.models import Config
 from mixnet.server import MixServer
 
@@ -91,11 +94,51 @@ def client(
     mix_addrs, mix_pubkeys = servers_data(config_path, config)
     client = Client(
         client_config.id,
+        int(client_config.address.split(":")[1]),
         config_dir=os.path.dirname(config_path),
         mix_pubkeys=mix_pubkeys,
         mix_addrs=mix_addrs,
     )
     asyncio.run(start_peer(client))
+
+
+@app.command()
+def prepare_message(
+    message: Annotated[str, typer.Option(help="Message to send")],
+    sender_id: Annotated[int, typer.Option(help="Sender client ID")],
+    recipient_id: Annotated[str, typer.Option(help="Recipient client ID")],
+    config_path: Annotated[str, typer.Option("--config", help="Path to config file")],
+):
+    config = load_config(config_path)
+    recipient = next((c for c in config.clients if c.id == recipient_id), None)
+    sender = next((c for c in config.clients if c.id == sender_id), None)
+    if not recipient:
+        typer.echo(f"Recipient client with id '{recipient_id}' not found in config.")
+        raise typer.Exit(code=1)
+
+    pubkey_path = os.path.join(os.path.dirname(config_path), f"{recipient_id}.key")
+    try:
+        with open(pubkey_path, "rb") as f:
+            recipient_pubkey = f.read()
+    except FileNotFoundError:
+        typer.echo(
+            f"Public key for recipient '{recipient_id}' not found at {pubkey_path}."
+        )
+        raise typer.Exit(code=1)
+
+    # Prepare gRPC request
+    request = pb2.PrepareMessageRequest(
+        message=message,
+        recipient_id=recipient_id,
+        recipient_pubkey=recipient_pubkey,
+    )
+    try:
+        with grpc.insecure_channel(sender.address) as channel:
+            stub = ClientStub(channel)
+            response = stub.PrepareMessage(request)
+        typer.echo(f"Message sent. Response: {response}")
+    except Exception as e:
+        typer.echo(f"Failed to send message: {e}")
 
 
 if __name__ == "__main__":

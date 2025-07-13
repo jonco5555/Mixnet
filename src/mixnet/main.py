@@ -44,9 +44,11 @@ async def main():
 
     clients: List[Client] = []
     for client in config.clients:
+        port = int(client.address.split(":")[1])
         clients.append(
             Client(
                 client.id,
+                port,
                 config_dir=os.path.dirname(config_path),
                 mix_pubkeys=mix_pubkeys,
                 mix_addrs=mix_addrs,
@@ -73,12 +75,12 @@ async def main():
     await asyncio.sleep(1)
 
     await asyncio.gather(
-        client_1.prepare_message(
+        client_1._prepare_message(
             "Hello, client2!",
             client_2_pubkey,
             client_2_id,
         ),
-        client_2.prepare_message(
+        client_2._prepare_message(
             "Hello, client1!",
             client_1_pubkey,
             client_1_id,

@@ -8,4 +8,6 @@ mix_servers:
   address: localhost:50053
 clients:
 - id: client_1
+  address: localhost:50061
 - id: client_2
+  address: localhost:50062

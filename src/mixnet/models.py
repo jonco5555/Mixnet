@@ -26,6 +26,7 @@ class Server(BaseModel):
 
 class Client(BaseModel):
     id: str
+    address: str
 
 
 class Entity(BaseModel):

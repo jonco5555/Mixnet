@@ -26,8 +26,8 @@ def config(tmp_path_factory):
             {"id": "server_3", "address": "localhost:50053"},
         ],
         "clients": [
-            {"id": "client_1"},
-            {"id": "client_2"},
+            {"id": "client_1", "address": "localhost:50061"},
+            {"id": "client_2", "address": "localhost:50062"},
         ],
         "messages_per_round": 2,
     }
@@ -79,8 +79,10 @@ async def clients_setup(config: Config, servers_setup):
     clients_addrs = []
     clients_pubkeys = []
     for client_config in config.clients:
+        port = int(client_config.address.split(":")[1])
         client = Client(
             client_config.id,
+            port,
             config_dir=config._temp_config_dir,
             mix_pubkeys=mix_pubkeys,
             mix_addrs=mix_addrs,
@@ -103,8 +105,8 @@ async def test_message_exchange(clients_setup, config):
     client_2_pubkey = clients_pubkeys[1]
 
     await asyncio.gather(
-        client_1.prepare_message("Hello, client2!", client_2_pubkey, client_2_id),
-        client_2.prepare_message("Hello, client1!", client_1_pubkey, client_1_id),
+        client_1._prepare_message("Hello, client2!", client_2_pubkey, client_2_id),
+        client_2._prepare_message("Hello, client1!", client_1_pubkey, client_1_id),
     )
     await asyncio.sleep(1)
     await asyncio.gather(*(client.stop() for client in clients))

@@ -8,16 +8,26 @@ from mixnet.crypto import decrypt, encrypt, generate_key_pair
 from mixnet.mixnet_pb2 import (
     ForwardMessageRequest,
     PollMessagesRequest,
+    PrepareMessageResponse,
     RegisterRequest,
     WaitForStartRequest,
 )
-from mixnet.mixnet_pb2_grpc import MixServerServicer, MixServerStub
+from mixnet.mixnet_pb2_grpc import (
+    ClientServicer,
+    MixServerStub,
+    add_ClientServicer_to_server,
+)
 from mixnet.models import Message
 
 
-class Client(MixServerServicer):
+class Client(ClientServicer):
     def __init__(
-        self, id: str, config_dir: str, mix_pubkeys: List[bytes], mix_addrs: List[str]
+        self,
+        id: str,
+        port: int,
+        config_dir: str,
+        mix_pubkeys: List[bytes],
+        mix_addrs: List[str],
     ):
         self._id = id
         self._pubkey_path = os.path.join(config_dir, f"{id}.key")
@@ -29,11 +39,17 @@ class Client(MixServerServicer):
         self._messages: Dict[int, bytes] = {}
         self._round = 0
         self._run_forever_future = None
+        self._port = port
+        self._listener = None
 
     async def start(self):
         print(f"[{self._id}] Client started")
+        self._listener = grpc.aio.server()
+        add_ClientServicer_to_server(self, self._listener)
+        self._listener.add_insecure_port(f"[::]:{self._port}")
         await self.register()
         round_duration = await self.wait_for_start()
+        await self._listener.start()
         self._running = True
         self._run_forever_future = asyncio.create_task(self.run_forever(round_duration))
 
@@ -44,7 +60,7 @@ class Client(MixServerServicer):
                 print(
                     f"[{self._id}] No messages for round {self._round}, creating a dummy"
                 )
-                await self.prepare_message("dummy", self._pubkey_b64, self._id)
+                await self._prepare_message("dummy", self._pubkey_b64, self._id)
             await self.send_message(
                 self._messages[self._round], self._mix_addrs[0], self._round
             )
@@ -52,6 +68,8 @@ class Client(MixServerServicer):
 
     async def stop(self):
         self._running = False
+        if self._listener:
+            await self._listener.stop(grace=5.0)
         if self._run_forever_future:
             await self._run_forever_future
         print(f"[{self._id}] Client stopped")
@@ -78,7 +96,7 @@ class Client(MixServerServicer):
             )
             return response.round_duration
 
-    async def prepare_message(
+    async def _prepare_message(
         self,
         message: str,
         recipient_pubkey: bytes,
@@ -119,7 +137,10 @@ class Client(MixServerServicer):
 
         return messages
 
-
-"""I want the start method to go like this:
-self should store the messages it built with prepare_message.
-If after asyncio.sleep time, it does not have a message for the current round """
+    async def PrepareMessage(self, request, context):
+        await self._prepare_message(
+            request.message,
+            request.recipient_pubkey,
+            request.recipient_addr,
+        )
+        return PrepareMessageResponse(status=True)
