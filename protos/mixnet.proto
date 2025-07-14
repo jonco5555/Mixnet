@@ -45,6 +45,7 @@ message WaitForStartResponse {
 
 service Client {
   rpc PrepareMessage (PrepareMessageRequest) returns (PrepareMessageResponse);
+  rpc PollMessages (ClientPollMessagesRequest) returns (ClientPollMessagesResponse);
 }
 
 message PrepareMessageRequest {
@@ -55,4 +56,10 @@ message PrepareMessageRequest {
 
 message PrepareMessageResponse {
   bool status = 1;
+}
+
+message ClientPollMessagesRequest {}
+
+message ClientPollMessagesResponse {
+  repeated string messages = 1;
 }

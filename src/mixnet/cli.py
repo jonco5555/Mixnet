@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 import signal
 
@@ -27,7 +28,7 @@ async def start_peer(peer: MixServer | Client):
     stop_event = asyncio.Event()
 
     def _signal_handler():
-        print(f"Received stop signal. Shutting down server {server._id}")
+        logging.warning("Received stop signal. Shutting down server")
         stop_event.set()
 
     for sig in (signal.SIGINT, signal.SIGTERM):
@@ -37,22 +38,28 @@ async def start_peer(peer: MixServer | Client):
             pass  # Signal are not be available on Windows
 
     await peer.start()
-    print(f"{peer.__class__.__name__} {peer._id} started successfully")
     try:
         await stop_event.wait()
     except Exception as e:
-        print(f"Error during server operation: {e}")
+        logging.exception(f"Error during server operation: {e}")
     finally:
         await peer.stop()
 
 
 @app.command()
 def server(
-    id: Annotated[str, typer.Option(help="Server ID")],
-    config_path: Annotated[str, typer.Option("--config", help="Path to config file")],
-    output_dir: Annotated[
-        str, typer.Option(help="Output directory for last server logs")
+    id: Annotated[str, typer.Option(envvar="SERVER_ID", help="Server ID")],
+    config_path: Annotated[
+        str, typer.Option("--config", envvar="CONFIG_PATH", help="Path to config file")
     ],
+    output_dir: Annotated[
+        str,
+        typer.Option(envvar="OUTPUT_DIR", help="Output directory for last server logs"),
+    ],
+    round_duration: Annotated[
+        int,
+        typer.Option(envvar="ROUND_DURATION", help="Duration of each round in seconds"),
+    ] = 1,
 ):
     config = load_config(config_path)
     server_config = next((s for s in config.mix_servers if s.id == id), None)
@@ -60,12 +67,13 @@ def server(
         typer.echo(f"Server with id '{id}' not found in config.")
         raise typer.Exit(code=1)
     server = MixServer(
-        id,
-        int(server_config.address.split(":")[1]),
-        config.messages_per_round,
-        [client.id for client in config.clients],
+        id=id,
+        port=int(server_config.address.split(":")[1]),
+        messages_per_round=config.messages_per_round,
+        clients_addrs=[client.id for client in config.clients],
         config_dir=os.path.dirname(config_path),
         output_dir=output_dir,
+        round_duration=round_duration,
     )
     asyncio.run(start_peer(server))
 
@@ -83,8 +91,10 @@ def servers_data(config_path: str, config: Config):
 
 @app.command()
 def client(
-    id: Annotated[str, typer.Option(help="Client ID")],
-    config_path: Annotated[str, typer.Option("--config", help="Path to config file")],
+    id: Annotated[str, typer.Option(envvar="CLIENT_ID", help="Client ID")],
+    config_path: Annotated[
+        str, typer.Option("--config", envvar="CONFIG_PATH", help="Path to config file")
+    ],
 ):
     config = load_config(config_path)
     client_config = next((c for c in config.clients if c.id == id), None)
@@ -93,8 +103,8 @@ def client(
         raise typer.Exit(code=1)
     mix_addrs, mix_pubkeys = servers_data(config_path, config)
     client = Client(
-        client_config.id,
-        int(client_config.address.split(":")[1]),
+        id=client_config.id,
+        port=int(client_config.address.split(":")[1]),
         config_dir=os.path.dirname(config_path),
         mix_pubkeys=mix_pubkeys,
         mix_addrs=mix_addrs,
@@ -102,12 +112,22 @@ def client(
     asyncio.run(start_peer(client))
 
 
+async def call_client_prepare_message(sender: Client, request):
+    async with grpc.aio.insecure_channel(sender.address) as channel:
+        stub = ClientStub(channel)
+        return await stub.PrepareMessage(request)
+
+
 @app.command()
 def prepare_message(
     message: Annotated[str, typer.Option(help="Message to send")],
-    sender_id: Annotated[int, typer.Option(help="Sender client ID")],
+    sender_id: Annotated[
+        str, typer.Option(envvar="CLIENT_ID", help="Sender client ID")
+    ],
     recipient_id: Annotated[str, typer.Option(help="Recipient client ID")],
-    config_path: Annotated[str, typer.Option("--config", help="Path to config file")],
+    config_path: Annotated[
+        str, typer.Option("--config", envvar="CONFIG_PATH", help="Path to config file")
+    ],
 ):
     config = load_config(config_path)
     recipient = next((c for c in config.clients if c.id == recipient_id), None)
@@ -129,14 +149,45 @@ def prepare_message(
     # Prepare gRPC request
     request = pb2.PrepareMessageRequest(
         message=message,
-        recipient_id=recipient_id,
         recipient_pubkey=recipient_pubkey,
+        recipient_addr=recipient.address,
     )
     try:
-        with grpc.insecure_channel(sender.address) as channel:
-            stub = ClientStub(channel)
-            response = stub.PrepareMessage(request)
-        typer.echo(f"Message sent. Response: {response}")
+        response = asyncio.run(call_client_prepare_message(sender, request))
+        if response.status:
+            typer.echo("Message prepared successfully.")
+        else:
+            typer.echo("Failed to prepare message.")
+    except Exception as e:
+        typer.echo(f"Failed to send message: {e}")
+
+
+async def call_client_poll_messages(client: Client, request):
+    async with grpc.aio.insecure_channel(client.address) as channel:
+        stub = ClientStub(channel)
+        return await stub.PollMessages(request)
+
+
+@app.command()
+def poll_messages(
+    client_id: Annotated[
+        str, typer.Option(envvar="CLIENT_ID", help="Client ID to poll messages for")
+    ],
+    config_path: Annotated[
+        str, typer.Option("--config", envvar="CONFIG_PATH", help="Path to config file")
+    ],
+):
+    config = load_config(config_path)
+    client = next((c for c in config.clients if c.id == client_id), None)
+    if not client:
+        typer.echo(f"Client with id '{client_id}' not found in config.")
+        raise typer.Exit(code=1)
+
+    # Prepare gRPC request
+    request = pb2.ClientPollMessagesRequest()
+    try:
+        response = asyncio.run(call_client_poll_messages(client, request))
+        typer.echo(f"Polled message: {response.messages}")
     except Exception as e:
         typer.echo(f"Failed to send message: {e}")
 

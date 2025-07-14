@@ -1,4 +1,5 @@
 import asyncio
+import logging
 import os
 from typing import Dict, List
 
@@ -19,6 +20,10 @@ from mixnet.mixnet_pb2_grpc import (
 )
 from mixnet.models import Message
 
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+)
+
 
 class MixServer(MixServerServicer):
     def __init__(
@@ -31,6 +36,7 @@ class MixServer(MixServerServicer):
         output_dir: str,
         round_duration: int = 1,
     ):
+        self._logger = logging.getLogger(id)
         self._id = id
         self._messages_per_round = messages_per_round
         self._clients_addrs = clients_addrs
@@ -58,9 +64,10 @@ class MixServer(MixServerServicer):
         self._running = True
         await self._server.start()
         self._wait_future = asyncio.create_task(self._wait_for_round_messages())
+        self._logger.info(f"MixServer {self._id} started on port {self._port}")
 
     async def Register(self, request, context):
-        print(f"[{self._id}] Register called by: {request.client_id}")
+        self._logger.info(f"Register called by: {request.client_id}")
         if len(self._registered_clients) >= self._messages_per_round:
             return RegisterResponse(status=False)
         self._registered_clients.add(request.client_id)
@@ -69,15 +76,15 @@ class MixServer(MixServerServicer):
         return RegisterResponse(status=True)
 
     async def WaitForStart(self, request, context):
-        print(f"[{self._id}] WaitForStart called by: {context.peer()}")
+        self._logger.info(f"WaitForStart called by: {context.peer()}")
         if not self._running:
             return WaitForStartResponse(ready=False)
         await self._start_event.wait()
         return WaitForStartResponse(ready=True, round_duration=self._round_duration)
 
     async def ForwardMessage(self, request, context):
-        print(
-            f"[{self._id}] Received message from: '{context.peer()}', round: {request.round}"
+        self._logger.info(
+            f"Received message from: '{context.peer()}', round: {request.round}"
         )
         message = decrypt(request.payload, self._privkey_b64)
         message = Message.model_validate_json(message.decode())
@@ -108,8 +115,8 @@ class MixServer(MixServerServicer):
     async def _send_round_messages(self, messages: List[Message], round: int):
         for message in messages:
             if message.address in self._clients_addrs:
-                print(
-                    f"[{self._id}] Received message for address {message.address} to poll"
+                self._logger.debug(
+                    f"Received message for address {message.address} to poll"
                 )
                 if message.address not in self._final_messages:
                     self._final_messages[message.address] = []
@@ -121,18 +128,18 @@ class MixServer(MixServerServicer):
                 with open(output_file, "wb") as f:
                     f.write(message.payload)
             else:
-                print(
-                    f"[{self._id}] Forwarding round {round} messages to {message.address}"
+                self._logger.info(
+                    f"Forwarding round {round} messages to {message.address}"
                 )
                 async with grpc.aio.insecure_channel(message.address) as channel:
                     stub = MixServerStub(channel)
                     req = ForwardMessageRequest(payload=message.payload, round=round)
                     response = await stub.ForwardMessage(req)
-                    print(f"[{self._id}] Server responded: {response.status}")
+                    self._logger.debug(f"Server responded: {response.status}")
 
     async def PollMessages(self, request, context):
         client_address = request.client_id
-        print(f"[{self._id}] PollMessages called for address: {client_address}")
+        self._logger.info(f"PollMessages called for address: {client_address}")
         payloads = self._final_messages.pop(client_address, [])
         return PollMessagesResponse(payloads=payloads)
 
@@ -144,5 +151,6 @@ class MixServer(MixServerServicer):
             await self._server.stop(grace=5.0)
         if self._wait_future:
             await self._wait_future
-        # if os.path.exists(self._pubkey_path):
-        #     os.remove(self._pubkey_path)
+        if os.path.exists(self._pubkey_path):
+            os.remove(self._pubkey_path)
+        self._logger.info("Server stopped")

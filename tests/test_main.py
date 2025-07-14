@@ -112,9 +112,8 @@ async def test_message_exchange(clients_setup, config):
     await asyncio.gather(*(client.stop() for client in clients))
     await asyncio.sleep(1)
     messages = await asyncio.gather(
-        client_1.poll_messages(config.mix_servers[2].address),
-        client_2.poll_messages(config.mix_servers[2].address),
+        client_1._poll_messages(config.mix_servers[2].address),
+        client_2._poll_messages(config.mix_servers[2].address),
     )
-    print(messages)
     assert "Hello, client2!" in messages[1]
     assert "Hello, client1!" in messages[0]

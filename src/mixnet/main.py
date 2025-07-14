@@ -90,8 +90,8 @@ async def main():
     await asyncio.gather(*(client.stop() for client in clients))
     await asyncio.sleep(1)
     messages = await asyncio.gather(
-        client_1.poll_messages(config.mix_servers[2].address),
-        client_2.poll_messages(config.mix_servers[2].address),
+        client_1._poll_messages(config.mix_servers[2].address),
+        client_2._poll_messages(config.mix_servers[2].address),
     )
     print(messages[0])
     print(messages[1])
@@ -124,8 +124,8 @@ if __name__ == "__main__":
     #     0,
     # )
     # time.sleep(1)
-    # print(c1.poll_messages("localhost:50051"))
-    # print(c2.poll_messages("localhost:50051"))
+    # print(c1._poll_messages("localhost:50051"))
+    # print(c2._poll_messages("localhost:50051"))
     # s1.stop()
     # s2.stop()
     # s3.stop()
