@@ -198,7 +198,7 @@ def poll_messages(
     request = pb2.ClientPollMessagesRequest()
     try:
         response = asyncio.run(call_client_poll_messages(client, request))
-        typer.echo(f"Polled message: {response.messages}")
+        typer.echo(response.messages)
     except Exception as e:
         typer.echo(f"Failed to send message: {e}")
 
