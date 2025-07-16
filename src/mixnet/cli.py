@@ -2,6 +2,7 @@ import asyncio
 import logging
 import os
 import signal
+import time
 
 import grpc
 import typer
@@ -56,21 +57,19 @@ def server(
         str,
         typer.Option(envvar="OUTPUT_DIR", help="Output directory for last server logs"),
     ],
-    round_duration: Annotated[
-        int,
-        typer.Option(envvar="ROUND_DURATION", help="Duration of each round in seconds"),
-    ] = 1,
 ):
     config = load_config(config_path)
     server_config = next((s for s in config.mix_servers if s.id == id), None)
     if not server_config:
         typer.echo(f"Server with id '{id}' not found in config.")
         raise typer.Exit(code=1)
+    # Use round_duration from config if present, else fallback to CLI arg
+    round_duration = config.round_duration
     server = MixServer(
         id=id,
         port=int(server_config.address.split(":")[1]),
         messages_per_round=config.messages_per_round,
-        clients_addrs=[client.id for client in config.clients],
+        clients_addrs=[client.address for client in config.clients],
         config_dir=os.path.dirname(config_path),
         output_dir=output_dir,
         round_duration=round_duration,
@@ -81,11 +80,21 @@ def server(
 def servers_data(config_path: str, config: Config):
     mix_addrs = []
     mix_pubkeys = []
+
     for server in config.mix_servers:
         mix_addrs.append(server.address)
         pubkey_path = os.path.join(os.path.dirname(config_path), f"{server.id}.key")
-        with open(pubkey_path, "rb") as f:
-            mix_pubkeys.append(f.read())
+        for attempt in range(5):
+            if os.path.exists(pubkey_path):
+                with open(pubkey_path, "rb") as f:
+                    mix_pubkeys.append(f.read())
+                break
+            else:
+                time.sleep(1)
+        else:
+            raise FileNotFoundError(
+                f"Public key file not found after 5 attempts: {pubkey_path}"
+            )
     return mix_addrs, mix_pubkeys
 
 
@@ -104,10 +113,12 @@ def client(
     mix_addrs, mix_pubkeys = servers_data(config_path, config)
     client = Client(
         id=client_config.id,
+        addr=client_config.address,
         port=int(client_config.address.split(":")[1]),
         config_dir=os.path.dirname(config_path),
         mix_pubkeys=mix_pubkeys,
         mix_addrs=mix_addrs,
+        dummy_payload=config.dummy_payload,
     )
     asyncio.run(start_peer(client))
 

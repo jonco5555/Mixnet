@@ -19,7 +19,7 @@ message ForwardMessageResponse {
 }
 
 message PollMessagesRequest {
-  string client_id = 1;
+  string client_addr = 1;
 }
 
 message PollMessagesResponse {

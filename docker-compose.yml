@@ -13,7 +13,6 @@ services:
       SERVER_ID: server_1
       CONFIG_PATH: /app/config/config.yaml
       OUTPUT_DIR: /app/output
-      ROUND_DURATION: "5"
     command:
       - server
     networks:

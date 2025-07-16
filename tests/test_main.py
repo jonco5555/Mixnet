@@ -30,6 +30,8 @@ def config(tmp_path_factory):
             {"id": "client_2", "address": "localhost:50062"},
         ],
         "messages_per_round": 2,
+        "round_duration": 1,
+        "dummy_payload": "dummy",
     }
     config_path = os.path.join(temp_config_dir, "config.yaml")
     with open(config_path, "w", encoding="utf-8") as f:
@@ -60,9 +62,10 @@ async def servers_setup(config: Config):
             server_config.id,
             port,
             config.messages_per_round,
-            [client.id for client in config.clients],
+            [client.address for client in config.clients],
             config_dir=config._temp_config_dir,
             output_dir=config._temp_output_dir,
+            round_duration=config.round_duration,
         )
         servers.append(server)
         mix_addrs.append(server_config.address)
@@ -82,13 +85,15 @@ async def clients_setup(config: Config, servers_setup):
         port = int(client_config.address.split(":")[1])
         client = Client(
             client_config.id,
+            client_config.address,
             port,
             config_dir=config._temp_config_dir,
             mix_pubkeys=mix_pubkeys,
             mix_addrs=mix_addrs,
+            dummy_payload=config.dummy_payload,
         )
         clients.append(client)
-        clients_addrs.append(client_config.id)
+        clients_addrs.append(client_config.address)
         clients_pubkeys.append(client._pubkey_b64)
     await asyncio.gather(*(client.start() for client in clients))
     yield clients, clients_addrs, clients_pubkeys
@@ -98,15 +103,15 @@ async def clients_setup(config: Config, servers_setup):
 async def test_message_exchange(clients_setup, config):
     clients, clients_addrs, clients_pubkeys = clients_setup
     client_1 = clients[0]
-    client_1_id = clients_addrs[0]
+    client_1_addr = clients_addrs[0]
     client_1_pubkey = clients_pubkeys[0]
     client_2 = clients[1]
-    client_2_id = clients_addrs[1]
+    client_2_addr = clients_addrs[1]
     client_2_pubkey = clients_pubkeys[1]
 
     await asyncio.gather(
-        client_1._prepare_message("Hello, client2!", client_2_pubkey, client_2_id),
-        client_2._prepare_message("Hello, client1!", client_1_pubkey, client_1_id),
+        client_1._prepare_message("Hello, client2!", client_2_pubkey, client_2_addr),
+        client_2._prepare_message("Hello, client1!", client_1_pubkey, client_1_addr),
     )
     await asyncio.sleep(1)
     await asyncio.gather(*(client.stop() for client in clients))

@@ -1,4 +1,6 @@
 messages_per_round: 2
+round_duration: 5
+dummy_payload: dummy
 mix_servers:
 - id: server_1
   address: server_1:50051

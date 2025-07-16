@@ -30,13 +30,17 @@ class Client(ClientServicer):
     def __init__(
         self,
         id: str,
+        addr: str,
         port: int,
         config_dir: str,
         mix_pubkeys: List[bytes],
         mix_addrs: List[str],
+        dummy_payload: str = "dummy",
     ):
         self._logger = logging.getLogger(id)
         self._id = id
+        self._addr = addr
+        self._dummy_payload = dummy_payload
         self._pubkey_path = os.path.join(config_dir, f"{id}.key")
         self._privkey_b64, self._pubkey_b64 = generate_key_pair(self._pubkey_path)
         self._running = False
@@ -68,13 +72,17 @@ class Client(ClientServicer):
                 self._logger.debug(
                     f"No messages for round {self._round}, creating a dummy"
                 )
-                await self._prepare_message("dummy", self._pubkey_b64, self._id)
-            await self.send_message(
-                self._messages[self._round], self._mix_addrs[0], self._round
-            )
-            self._round += 1
+                await self._prepare_message(
+                    self._dummy_payload, self._pubkey_b64, self._addr
+                )
+            if self._round in self._messages:
+                await self.send_message(
+                    self._messages[self._round], self._mix_addrs[0], self._round
+                )
+                self._round += 1
 
     async def stop(self):
+        self._logger.info("Stopping client")
         self._running = False
         if self._listener:
             await self._listener.stop(grace=5.0)
@@ -115,7 +123,7 @@ class Client(ClientServicer):
         round = self._round
         if round in self._messages:
             self._logger.debug(f"Message for round {round} already prepared")
-            if message == "dummy":
+            if message == self._dummy_payload:
                 self._logger.debug(f"Dummy message for round {round} ignored")
                 return
             round += 1
@@ -137,12 +145,13 @@ class Client(ClientServicer):
     async def _poll_messages(self, server_host) -> List[str]:
         async with grpc.aio.insecure_channel(server_host) as channel:
             stub = MixServerStub(channel)
-            request = PollMessagesRequest(client_id=self._id)
+            request = PollMessagesRequest(client_addr=self._addr)
             response = await stub.PollMessages(request)
         messages = []
         for payload in response.payloads:
             message = decrypt(payload, self._privkey_b64).decode()
-            messages.append(message)
+            if message != self._dummy_payload:
+                messages.append(message)
             self._logger.info(f"Polled message {message}")
 
         return messages
