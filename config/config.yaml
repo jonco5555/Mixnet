@@ -1,5 +1,5 @@
 messages_per_round: 2
-round_duration: 5
+round_duration: 1
 dummy_payload: dummy
 mix_servers:
 - id: server_1

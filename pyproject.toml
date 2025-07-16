@@ -20,6 +20,10 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [dependency-groups]
+benchmark = [
+    "matplotlib>=3.10.3",
+    "pandas>=2.3.1",
+]
 dev = [
     "mypy>=1.16.1",
     "pre-commit>=4.2.0",

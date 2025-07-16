@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from typing import Dict, List
 
 import grpc
@@ -34,7 +35,9 @@ class MixServer(MixServerServicer):
         clients_addrs: List[str],
         config_dir: str,
         output_dir: str,
-        round_duration: int = 1,
+        round_duration: float = 1,
+        enable_metrics: bool = False,
+        metrics: Dict[str, float] = {},
     ):
         self._logger = logging.getLogger(id)
         self._id = id
@@ -43,6 +46,8 @@ class MixServer(MixServerServicer):
         self._output_dir = output_dir
         self._round_duration = round_duration
         self._port = port
+        self._enable_metrics = enable_metrics
+        self._metrics = metrics
         self._server = None
 
         self._pubkey_path = os.path.join(config_dir, f"{id}.key")
@@ -92,6 +97,8 @@ class MixServer(MixServerServicer):
         return WaitForStartResponse(ready=True, round_duration=self._round_duration)
 
     async def ForwardMessage(self, request, context):
+        if self._enable_metrics:
+            received_time = time.perf_counter_ns()
         self._logger.info(
             f"Received message from: '{context.peer()}' for round {request.round}"
         )
@@ -101,6 +108,8 @@ class MixServer(MixServerServicer):
             # Store the message
             if request.round not in self._messages:
                 self._messages[request.round] = []
+                if request.round == 0:
+                    self._metrics[self._id]["round_start_time"] = received_time
             self._messages[request.round].append(message)
             self._logger.debug(
                 f"Stored message for round {request.round}. Count: {len(self._messages[request.round])}/{self._messages_per_round}"
@@ -137,6 +146,10 @@ class MixServer(MixServerServicer):
                 if message.address not in self._final_messages:
                     self._final_messages[message.address] = []
                 self._final_messages[message.address].append(message.payload)
+                if self._enable_metrics:
+                    round_end_time = time.perf_counter_ns()
+                    if round == 0:
+                        self._metrics[self._id]["round_end_time"] = round_end_time
                 output_file = os.path.join(
                     self._output_dir,
                     f"{self._id}_round_{round}_{message.address.replace(':', '_')}.txt",
@@ -169,10 +182,10 @@ class MixServer(MixServerServicer):
         self._running = False
         async with self._cond:
             self._cond.notify()  # Wake up forwarding thread to check running flag
-        if self._server:
-            await self._server.stop(grace=5.0)
         if self._wait_future:
             await self._wait_future
+        if self._server:
+            await self._server.stop(grace=5.0)
         if os.path.exists(self._pubkey_path):
             os.remove(self._pubkey_path)
-        self._logger.warning("server stopped")
+        self._logger.info("server stopped")

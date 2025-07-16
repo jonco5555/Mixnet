@@ -2,19 +2,35 @@ import asyncio
 import os
 from typing import List
 
-import yaml
-
 from mixnet.client import Client
-from mixnet.models import Config
+from mixnet.models import Client as ClientConfig
+from mixnet.models import Config, Server
 from mixnet.server import MixServer
 
 
 async def main():
-    config_path = "config/local-config.yaml"
+    num_mix_servers = 3
+    num_clients = 2
+    dummy_payload = "dummy"
+
+    mix_servers = [
+        Server(id=f"server_{i + 1}", address=f"localhost:{50051 + i}")
+        for i in range(num_mix_servers)
+    ]
+    clients = [
+        ClientConfig(id=f"client_{i + 1}", address=f"localhost:{50101 + i}")
+        for i in range(num_clients)
+    ]
+
+    config = Config(
+        mix_servers=mix_servers,
+        clients=clients,
+        messages_per_round=num_clients,
+        dummy_payload=dummy_payload,
+        round_duration=0.1,
+    )
+    config_dir = "config"
     output_dir = "output"
-    with open(config_path, "r", encoding="utf-8") as f:
-        data = yaml.safe_load(f)
-    config = Config(**data)
 
     servers: List[MixServer] = []
     for server in config.mix_servers:
@@ -25,7 +41,7 @@ async def main():
                 port,
                 config.messages_per_round,
                 [client.address for client in config.clients],
-                config_dir=os.path.dirname(config_path),
+                config_dir=config_dir,
                 output_dir=output_dir,
                 round_duration=config.round_duration,
             )
@@ -39,7 +55,7 @@ async def main():
     mix_pubkeys = []
     for server in config.mix_servers:
         mix_addrs.append(server.address)
-        pubkey_path = os.path.join(os.path.dirname(config_path), f"{server.id}.key")
+        pubkey_path = os.path.join(config_dir, f"{server.id}.key")
         with open(pubkey_path, "rb") as f:
             mix_pubkeys.append(f.read())
 
@@ -51,7 +67,7 @@ async def main():
                 client.id,
                 client.address,
                 port,
-                config_dir=os.path.dirname(config_path),
+                config_dir=config_dir,
                 mix_pubkeys=mix_pubkeys,
                 mix_addrs=mix_addrs,
                 dummy_payload=config.dummy_payload,
@@ -61,14 +77,10 @@ async def main():
     client_1 = clients[0]
     client_2 = clients[1]
 
-    client_1_pubkey_path = os.path.join(
-        os.path.dirname(config_path), f"{client_1._id}.key"
-    )
+    client_1_pubkey_path = os.path.join(config_dir, f"{client_1._id}.key")
     with open(client_1_pubkey_path, "rb") as f:
         client_1_pubkey = f.read()
-    client_2_pubkey_path = os.path.join(
-        os.path.dirname(config_path), f"{client_2._id}.key"
-    )
+    client_2_pubkey_path = os.path.join(config_dir, f"{client_2._id}.key")
     with open(client_2_pubkey_path, "rb") as f:
         client_2_pubkey = f.read()
 

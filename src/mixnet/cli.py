@@ -63,7 +63,6 @@ def server(
     if not server_config:
         typer.echo(f"Server with id '{id}' not found in config.")
         raise typer.Exit(code=1)
-    # Use round_duration from config if present, else fallback to CLI arg
     round_duration = config.round_duration
     server = MixServer(
         id=id,

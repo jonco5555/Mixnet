@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from typing import Dict, List
 
 import grpc
@@ -36,6 +37,8 @@ class Client(ClientServicer):
         mix_pubkeys: List[bytes],
         mix_addrs: List[str],
         dummy_payload: str = "dummy",
+        enable_metrics: bool = False,
+        metrics: Dict[str, float] = {},
     ):
         self._logger = logging.getLogger(id)
         self._id = id
@@ -53,6 +56,8 @@ class Client(ClientServicer):
         self._run_forever_future = None
         self._port = port
         self._listener = None
+        self._enable_metrics = enable_metrics
+        self._metrics = metrics
 
     async def start(self):
         self._logger.info("Client started")
@@ -65,7 +70,7 @@ class Client(ClientServicer):
         self._running = True
         self._run_forever_future = asyncio.create_task(self.run_forever(round_duration))
 
-    async def run_forever(self, round_duration: int):
+    async def run_forever(self, round_duration: float):
         while self._running:
             await asyncio.sleep(round_duration)
             if self._round not in self._messages:
@@ -75,19 +80,18 @@ class Client(ClientServicer):
                 await self._prepare_message(
                     self._dummy_payload, self._pubkey_b64, self._addr
                 )
-            if self._round in self._messages:
-                await self.send_message(
-                    self._messages[self._round], self._mix_addrs[0], self._round
-                )
-                self._round += 1
+            await self.send_message(
+                self._messages[self._round], self._mix_addrs[0], self._round
+            )
+            self._round += 1
 
     async def stop(self):
         self._logger.info("Stopping client")
         self._running = False
-        if self._listener:
-            await self._listener.stop(grace=5.0)
         if self._run_forever_future:
             await self._run_forever_future
+        if self._listener:
+            await self._listener.stop(grace=5.0)
         if os.path.exists(self._pubkey_path):
             os.remove(self._pubkey_path)
         self._logger.info("Client stopped")
@@ -127,13 +131,21 @@ class Client(ClientServicer):
                 self._logger.debug(f"Dummy message for round {round} ignored")
                 return
             round += 1
-        self._logger.info(f"Preparing message for round {round} - {message}")
+        if self._enable_metrics:
+            prepare_start_time = time.perf_counter_ns()
+            if round == 0:
+                self._metrics[self._id]["prepare_start_time"] = prepare_start_time
+        self._logger.info(f"Preparing message for round {round}")
         pubkeys = [recipient_pubkey] + self._mix_pubkeys[::-1]
         addresses = [recipient_addr] + self._mix_addrs[::-1]
         for pubkey, addr in zip(pubkeys, addresses):
             ciphertext = encrypt(message.encode(), pubkey)
             message = Message(payload=ciphertext, address=addr).model_dump_json()
         self._messages[round] = ciphertext
+        if self._enable_metrics:
+            prepare_end_time = time.perf_counter_ns()
+            if round == 0:
+                self._metrics[self._id]["prepare_end_time"] = prepare_end_time
 
     async def send_message(self, payload: bytes, addr: str, round):
         async with grpc.aio.insecure_channel(addr) as channel:
@@ -152,7 +164,8 @@ class Client(ClientServicer):
             message = decrypt(payload, self._privkey_b64).decode()
             if message != self._dummy_payload:
                 messages.append(message)
-            self._logger.info(f"Polled message {message}")
+                self._logger.info("Polled message")
+                self._logger.debug(f"{message=}")
 
         return messages
 
