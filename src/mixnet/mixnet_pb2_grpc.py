@@ -3,7 +3,7 @@
 
 import grpc
 
-from mixnet import mixnet_pb2 as mixnet__pb2
+import mixnet.mixnet_pb2 as mixnet__pb2
 
 GRPC_GENERATED_VERSION = "1.73.0"
 GRPC_VERSION = grpc.__version__
@@ -234,6 +234,130 @@ class MixServer(object):
             "/mixnet.MixServer/WaitForStart",
             mixnet__pb2.WaitForStartRequest.SerializeToString,
             mixnet__pb2.WaitForStartResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+
+class ClientStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.PrepareMessage = channel.unary_unary(
+            "/mixnet.Client/PrepareMessage",
+            request_serializer=mixnet__pb2.PrepareMessageRequest.SerializeToString,
+            response_deserializer=mixnet__pb2.PrepareMessageResponse.FromString,
+            _registered_method=True,
+        )
+        self.PollMessages = channel.unary_unary(
+            "/mixnet.Client/PollMessages",
+            request_serializer=mixnet__pb2.ClientPollMessagesRequest.SerializeToString,
+            response_deserializer=mixnet__pb2.ClientPollMessagesResponse.FromString,
+            _registered_method=True,
+        )
+
+
+class ClientServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def PrepareMessage(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+    def PollMessages(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details("Method not implemented!")
+        raise NotImplementedError("Method not implemented!")
+
+
+def add_ClientServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+        "PrepareMessage": grpc.unary_unary_rpc_method_handler(
+            servicer.PrepareMessage,
+            request_deserializer=mixnet__pb2.PrepareMessageRequest.FromString,
+            response_serializer=mixnet__pb2.PrepareMessageResponse.SerializeToString,
+        ),
+        "PollMessages": grpc.unary_unary_rpc_method_handler(
+            servicer.PollMessages,
+            request_deserializer=mixnet__pb2.ClientPollMessagesRequest.FromString,
+            response_serializer=mixnet__pb2.ClientPollMessagesResponse.SerializeToString,
+        ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+        "mixnet.Client", rpc_method_handlers
+    )
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers("mixnet.Client", rpc_method_handlers)
+
+
+# This class is part of an EXPERIMENTAL API.
+class Client(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def PrepareMessage(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/mixnet.Client/PrepareMessage",
+            mixnet__pb2.PrepareMessageRequest.SerializeToString,
+            mixnet__pb2.PrepareMessageResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True,
+        )
+
+    @staticmethod
+    def PollMessages(
+        request,
+        target,
+        options=(),
+        channel_credentials=None,
+        call_credentials=None,
+        insecure=False,
+        compression=None,
+        wait_for_ready=None,
+        timeout=None,
+        metadata=None,
+    ):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            "/mixnet.Client/PollMessages",
+            mixnet__pb2.ClientPollMessagesRequest.SerializeToString,
+            mixnet__pb2.ClientPollMessagesResponse.FromString,
             options,
             channel_credentials,
             insecure,

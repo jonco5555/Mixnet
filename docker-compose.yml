@@ -1,0 +1,88 @@
+version: '3.8'
+services:
+  server_1:
+    container_name: server_1
+    image: mixnet:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    volumes:
+      - ./config:/app/config
+      - ./output:/app/output
+    environment:
+      SERVER_ID: server_1
+      CONFIG_PATH: /app/config/config.yaml
+      OUTPUT_DIR: /app/output
+    command:
+      - server
+    networks:
+      - mixnet
+
+  server_2:
+    container_name: server_2
+    image: mixnet:latest
+    volumes:
+      - ./config:/app/config
+      - ./output:/app/output
+    environment:
+      SERVER_ID: server_2
+      CONFIG_PATH: /app/config/config.yaml
+      OUTPUT_DIR: /app/output
+    command:
+      - server
+    networks:
+      - mixnet
+
+  server_3:
+    container_name: server_3
+    image: mixnet:latest
+    volumes:
+      - ./config:/app/config
+      - ./output:/app/output
+    environment:
+      SERVER_ID: server_3
+      CONFIG_PATH: /app/config/config.yaml
+      OUTPUT_DIR: /app/output
+    command:
+      - server
+    networks:
+      - mixnet
+
+  client_1:
+    container_name: client_1
+    image: mixnet:latest
+    volumes:
+      - ./config:/app/config
+      - ./output:/app/output
+    environment:
+      CLIENT_ID: client_1
+      CONFIG_PATH: /app/config/config.yaml
+    command:
+      - client
+    networks:
+      - mixnet
+    depends_on:
+      - server_1
+      - server_2
+      - server_3
+
+  client_2:
+    container_name: client_2
+    image: mixnet:latest
+    volumes:
+      - ./config:/app/config
+      - ./output:/app/output
+    environment:
+      CLIENT_ID: client_2
+      CONFIG_PATH: /app/config/config.yaml
+    command:
+      - client
+    networks:
+      - mixnet
+    depends_on:
+      - server_1
+      - server_2
+      - server_3
+networks:
+  mixnet:
+    driver: bridge

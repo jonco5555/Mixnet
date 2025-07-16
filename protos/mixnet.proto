@@ -19,11 +19,11 @@ message ForwardMessageResponse {
 }
 
 message PollMessagesRequest {
-    string client_id = 1;
+  string client_addr = 1;
 }
 
 message PollMessagesResponse {
-    repeated bytes payloads = 1;
+  repeated bytes payloads = 1;
 }
 
 message RegisterRequest {
@@ -41,4 +41,25 @@ message WaitForStartRequest {
 message WaitForStartResponse {
   bool ready = 1;
   int32 round_duration = 2;  // Round duration in seconds
+}
+
+service Client {
+  rpc PrepareMessage (PrepareMessageRequest) returns (PrepareMessageResponse);
+  rpc PollMessages (ClientPollMessagesRequest) returns (ClientPollMessagesResponse);
+}
+
+message PrepareMessageRequest {
+  string message = 1;
+  bytes recipient_pubkey = 2;
+  string recipient_addr = 3;
+}
+
+message PrepareMessageResponse {
+  bool status = 1;
+}
+
+message ClientPollMessagesRequest {}
+
+message ClientPollMessagesResponse {
+  repeated string messages = 1;
 }

@@ -1,0 +1,15 @@
+messages_per_round: 2
+round_duration: 1
+dummy_payload: dummy
+mix_servers:
+- id: server_1
+  address: localhost:50051
+- id: server_2
+  address: localhost:50052
+- id: server_3
+  address: localhost:50053
+clients:
+- id: client_1
+  address: localhost:50061
+- id: client_2
+  address: localhost:50062
