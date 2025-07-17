@@ -141,11 +141,14 @@ In `src/mixnet/benchmarks.py`, I provide a benchmark for measuring three metrics
 
 I ran the benchmark with 2 to 10 clients, and with message size from 10 to 10^6 bytes.
 In each run, I explicitly sent a message from client_1 to client_2, while all the other clients sent to themselves.
+
 I measured the metrics on this specific message round.
 
 I received the following results:
-[Metrics VS Number of Clients](metrics_vs_num_of_clients.png)
-[Metrics VS Message Size](metrics_vs_message_size.png)
+
+![Metrics VS Number of Clients](metrics_vs_num_of_clients.png)
+
+![Metrics VS Message Size](metrics_vs_message_size.png)
 
 # Proposed Attacks
 
