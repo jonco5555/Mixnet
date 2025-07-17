@@ -11,10 +11,12 @@ Each component exposes its API via gRPC methods. The full API can be found in [`
 
 The code uses asynchronous programming with `asyncio` and `grpc.aio` to handle multiple requests concurrently.
 
+The code is round-based that is measured by time.
+
 ## Run Flow
 
 1. `config.yaml` is placed in a shared config directory.
-2. The configuration files containes:
+2. The configuration files contains:
     - Number of messages required per round
     - Round duration
     - Dummy payload
@@ -23,7 +25,7 @@ The code uses asynchronous programming with `asyncio` and `grpc.aio` to handle m
 3. 3 mix servers are deployed, each writing its own public key to the config directory.
 4. Clients are deployed, each writing its own public key to the config directory.
 5. Each client registers to the first mix server in the list.
-6. Each client calls `WaitForStart` on the first mix server and waits for a respnse.
+6. Each client calls `WaitForStart` on the first mix server and waits for a response.
 7. Once all the clients are registered, the first mix server returns a `WaitForStartResponse` with the round duration.
 8. Each client starts counting rounds and sending a message each round.
 9. Each client exposes `PrepareMessage` gRPC method to prepare a message for sending.
@@ -59,7 +61,7 @@ The code uses asynchronous programming with `asyncio` and `grpc.aio` to handle m
 - **Graceful Shutdown**: The server supports clean shutdown, ensuring all background tasks are completed and resources (such as keys) are cleaned up.
 
 
-### Cleint
+### Client
 
 - **Role in Mixnet**: The `Client` acts as an endpoint in the mix network, responsible for preparing, sending, and receiving messages through the mix servers, ensuring sender and receiver anonymity.
 
@@ -139,7 +141,7 @@ In `src/mixnet/benchmarks.py`, I provide a benchmark for measuring three metrics
 2. Decryption and forwarding latency (mix side)
 3. End-to-end delivery time
 
-I ran the benchmark with 2 to 10 clients, and with message size from 10 to 10^6 bytes.
+I ran the benchmark with 2 to 10 clients, and with message size from 10 to 10^6 bytes, with round_duration=0.1s.
 In each run, I explicitly sent a message from client_1 to client_2, while all the other clients sent to themselves.
 
 I measured the metrics on this specific message round.
