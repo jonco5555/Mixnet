@@ -148,7 +148,19 @@ I received the following results:
 
 ![Metrics VS Number of Clients](metrics_vs_num_of_clients.png)
 
+For end-to-end delivery time and mixes latency, we can see that it is linear with the number of clients, since each client sends a message in each round.
+
+For message preparation time, we can see that the number of clients does not affect it, since each client prepares its message independently.
+
+We can see though that the message size has exponential effect on the metrics, since each message is encrypted with multiple layers of public-key encryption, and the encryption time grows with the message size. Also delivery time grows with the message size, since each mix server needs to decrypt the message and forward it to the next server.
+
+
 ![Metrics VS Message Size](metrics_vs_message_size.png)
+
+Here the message size axis is logarithmic.
+We can see that the message size has exponential effect on the metrics, as mentioned above.
+
+We can also see that the number of clients has linear effect on the metrics, as we saw above.
 
 # Proposed Attacks
 
