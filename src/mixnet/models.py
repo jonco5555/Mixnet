@@ -31,7 +31,7 @@ class Client(BaseModel):
 
 class Config(BaseModel):
     messages_per_round: int
-    round_duration: int = 1
+    round_duration: float = 1
     dummy_payload: str = "dummy"
     mix_servers: List[Server]
     clients: List[Client]

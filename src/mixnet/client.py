@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from typing import Dict, List
 
 import grpc
@@ -36,6 +37,8 @@ class Client(ClientServicer):
         mix_pubkeys: List[bytes],
         mix_addrs: List[str],
         dummy_payload: str = "dummy",
+        enable_metrics: bool = False,
+        metrics: Dict[str, float] = {},
     ):
         self._logger = logging.getLogger(id)
         self._id = id
@@ -53,6 +56,8 @@ class Client(ClientServicer):
         self._run_forever_future = None
         self._port = port
         self._listener = None
+        self._enable_metrics = enable_metrics
+        self._metrics = metrics
 
     async def start(self):
         self._logger.info("Client started")
@@ -65,7 +70,15 @@ class Client(ClientServicer):
         self._running = True
         self._run_forever_future = asyncio.create_task(self.run_forever(round_duration))
 
-    async def run_forever(self, round_duration: int):
+    async def run_forever(self, round_duration: float):
+        """Main loop for the client to send messages periodically
+        Client sleeps for `round_duration` seconds and checks if there are messages to send.
+        If no messages are found for the current round, it prepares a dummy message.
+        Then it sends the message to the first mix server in the list.
+
+        Args:
+            round_duration (float): round duration in seconds
+        """
         while self._running:
             await asyncio.sleep(round_duration)
             if self._round not in self._messages:
@@ -75,24 +88,31 @@ class Client(ClientServicer):
                 await self._prepare_message(
                     self._dummy_payload, self._pubkey_b64, self._addr
                 )
-            if self._round in self._messages:
-                await self.send_message(
-                    self._messages[self._round], self._mix_addrs[0], self._round
-                )
-                self._round += 1
+            await self.send_message(
+                self._messages[self._round], self._mix_addrs[0], self._round
+            )
+            self._round += 1
 
     async def stop(self):
         self._logger.info("Stopping client")
         self._running = False
-        if self._listener:
-            await self._listener.stop(grace=5.0)
         if self._run_forever_future:
             await self._run_forever_future
+        if self._listener:
+            await self._listener.stop(grace=5.0)
         if os.path.exists(self._pubkey_path):
             os.remove(self._pubkey_path)
         self._logger.info("Client stopped")
 
     async def register(self):
+        """Calls the server's gRPC mathod to register
+
+        Raises:
+            Exception: Failed to register
+
+        Returns:
+            RegisterResponse: response from the server
+        """
         async with grpc.aio.insecure_channel(self._first_host) as channel:
             stub = MixServerStub(channel)
             request = RegisterRequest(client_id=self._id)
@@ -103,6 +123,16 @@ class Client(ClientServicer):
             return response
 
     async def wait_for_start(self):
+        """Calls the server's gRPC method to wait for the server to be ready.
+        Once the server is ready, it means the first round starts and the client
+        should start sending messages.
+
+        Raises:
+            Exception: Server is not ready
+
+        Returns:
+            float: round duration in seconds
+        """
         async with grpc.aio.insecure_channel(self._first_host) as channel:
             stub = MixServerStub(channel)
             request = WaitForStartRequest(client_id=self._id)
@@ -120,6 +150,15 @@ class Client(ClientServicer):
         recipient_pubkey: bytes,
         recipient_addr: str,
     ):
+        """Prepares a message to be sent in the mixnet by encrypting it in layers like an onion.
+        The message is encrypted with the recipient's public key and then with the public keys of
+        the mix servers in reverse order.
+
+        Args:
+            message (str): the message to be sent
+            recipient_pubkey (bytes): the public key of the recipient
+            recipient_addr (str): the address of the recipient
+        """
         round = self._round
         if round in self._messages:
             self._logger.debug(f"Message for round {round} already prepared")
@@ -127,22 +166,47 @@ class Client(ClientServicer):
                 self._logger.debug(f"Dummy message for round {round} ignored")
                 return
             round += 1
-        self._logger.info(f"Preparing message for round {round} - {message}")
+        if self._enable_metrics:
+            prepare_start_time = time.perf_counter_ns()
+            if round == 0:
+                self._metrics[self._id]["prepare_start_time"] = prepare_start_time
+        self._logger.info(f"Preparing message for round {round}")
         pubkeys = [recipient_pubkey] + self._mix_pubkeys[::-1]
         addresses = [recipient_addr] + self._mix_addrs[::-1]
         for pubkey, addr in zip(pubkeys, addresses):
             ciphertext = encrypt(message.encode(), pubkey)
             message = Message(payload=ciphertext, address=addr).model_dump_json()
         self._messages[round] = ciphertext
+        if self._enable_metrics:
+            prepare_end_time = time.perf_counter_ns()
+            if round == 0:
+                self._metrics[self._id]["prepare_end_time"] = prepare_end_time
 
-    async def send_message(self, payload: bytes, addr: str, round):
+    async def send_message(self, payload: bytes, addr: str, round: int):
+        """Calls the server's gRPC method to forward the message to it.
+
+        Args:
+            payload (bytes): the encrypted message payload
+            addr (str): the address of the mix server to send the message to
+            round (int): the message round number
+        """
         async with grpc.aio.insecure_channel(addr) as channel:
             stub = MixServerStub(channel)
             request = ForwardMessageRequest(payload=payload, round=round)
             response = await stub.ForwardMessage(request)
             self._logger.debug(f"Server responded: {response.status}")
 
-    async def _poll_messages(self, server_host) -> List[str]:
+    async def _poll_messages(self, server_host: str) -> List[str]:
+        """Calls the server's gRPC method to poll messages from it.
+        It decrypts the messages using the client's private key and returns a list of
+        messages that are not dummy payloads.
+
+        Args:
+            server_host (str): the address of the mix server to poll messages from
+
+        Returns:
+            List[str]: list of decrypted messages that are not dummy payloads
+        """
         async with grpc.aio.insecure_channel(server_host) as channel:
             stub = MixServerStub(channel)
             request = PollMessagesRequest(client_addr=self._addr)
@@ -152,11 +216,21 @@ class Client(ClientServicer):
             message = decrypt(payload, self._privkey_b64).decode()
             if message != self._dummy_payload:
                 messages.append(message)
-            self._logger.info(f"Polled message {message}")
+                self._logger.info("Polled message")
+                self._logger.debug(f"{message=}")
 
         return messages
 
     async def PrepareMessage(self, request, context):
+        """A gRPC API method to invoke _prepare_message
+
+        Args:
+            request (PrepareMessageRequest): gRPC request
+            context (_type_): gRPC context
+
+        Returns:
+            PrepareMessageResponse: the response indicating the status of the operation
+        """
         await self._prepare_message(
             request.message,
             request.recipient_pubkey,
@@ -165,5 +239,14 @@ class Client(ClientServicer):
         return PrepareMessageResponse(status=True)
 
     async def PollMessages(self, request, context):
+        """A gRPC API method to invoke _poll_messages
+
+        Args:
+            request (ClientPollMessagesRequest): gRPC request
+            context (_type_): gRPC context
+
+        Returns:
+            ClientPollMessagesResponse: the response containing the list of messages
+        """
         messages = await self._poll_messages(self._last_host)
         return ClientPollMessagesResponse(messages=messages)

@@ -1,6 +1,7 @@
 import asyncio
 import logging
 import os
+import time
 from typing import Dict, List
 
 import grpc
@@ -34,7 +35,9 @@ class MixServer(MixServerServicer):
         clients_addrs: List[str],
         config_dir: str,
         output_dir: str,
-        round_duration: int = 1,
+        round_duration: float = 1,
+        enable_metrics: bool = False,
+        metrics: Dict[str, float] = {},
     ):
         self._logger = logging.getLogger(id)
         self._id = id
@@ -43,6 +46,8 @@ class MixServer(MixServerServicer):
         self._output_dir = output_dir
         self._round_duration = round_duration
         self._port = port
+        self._enable_metrics = enable_metrics
+        self._metrics = metrics
         self._server = None
 
         self._pubkey_path = os.path.join(config_dir, f"{id}.key")
@@ -67,6 +72,16 @@ class MixServer(MixServerServicer):
         self._logger.info(f"MixServer {self._id} started on port {self._port}")
 
     async def Register(self, request, context):
+        """A gRPC API method for a client to register with the server.
+        Sets start_event when the required number of clients is registered.
+
+        Args:
+            request (RegisterRequest): gRPC request containing client ID
+            context (_type_): gRPC context
+
+        Returns:
+            RegisterResponse: gRPC response indicating registration status
+        """
         self._logger.info(f"Client '{request.client_id}' attempting to register.")
         if len(self._registered_clients) >= self._messages_per_round:
             self._logger.warning(
@@ -83,6 +98,18 @@ class MixServer(MixServerServicer):
         return RegisterResponse(status=True)
 
     async def WaitForStart(self, request, context):
+        """A gRPC API method for a client to wait for the server to be ready.
+        The server does not send a response until all clients are registered.
+        Once all clients are registered and start_event, a response is sent with
+        the round duration, and the clients can start sending messages.
+
+        Args:
+            request (WaitForStartRequest): gRPC request containing client ID
+            context (_type_): gRPC context
+
+        Returns:
+            WaitForStartResponse: gRPC response indicating readiness and round duration
+        """
         self._logger.debug(f"WaitForStart called by: {context.peer()}")
         if not self._running:
             self._logger.warning("WaitForStart called but server is not running.")
@@ -92,6 +119,20 @@ class MixServer(MixServerServicer):
         return WaitForStartResponse(ready=True, round_duration=self._round_duration)
 
     async def ForwardMessage(self, request, context):
+        """A gRPC API method to receive messages from clients or other mix servers,
+        decrypt them, and store them for processing and then forwarding for their destination.
+        If received all messages for the current round, it notifies the waiting thread to start
+        forwarding them.
+
+        Args:
+            request (ForwardMessageRequest): gRPC request containing the encrypted message and round number
+            context (_type_): gRPC context
+
+        Returns:
+            ForwardMessageResponse: gRPC response indicating the status of the operation
+        """
+        if self._enable_metrics:
+            received_time = time.perf_counter_ns()
         self._logger.info(
             f"Received message from: '{context.peer()}' for round {request.round}"
         )
@@ -101,6 +142,8 @@ class MixServer(MixServerServicer):
             # Store the message
             if request.round not in self._messages:
                 self._messages[request.round] = []
+                if request.round == 0 and self._enable_metrics:
+                    self._metrics[self._id]["round_start_time"] = received_time
             self._messages[request.round].append(message)
             self._logger.debug(
                 f"Stored message for round {request.round}. Count: {len(self._messages[request.round])}/{self._messages_per_round}"
@@ -115,6 +158,9 @@ class MixServer(MixServerServicer):
         )
 
     async def _wait_for_round_messages(self):
+        """An asynchronous task that waits for all the round messages to be received.
+        Once notified, it takes the messages from the dictionary and sends them.
+        """
         while self._running:
             async with self._cond:
                 await self._cond.wait()
@@ -129,6 +175,14 @@ class MixServer(MixServerServicer):
             await self._send_round_messages(messages, current_round)
 
     async def _send_round_messages(self, messages: List[Message], round: int):
+        """If the message is for a registered client, it stores it in the final
+        messages and saves the payload to a file.
+        If the message is for another mix server, it forwards it to that server.
+
+        Args:
+            messages (List[Message]): messages to be sent in the current round
+            round (int): the current round number
+        """
         for message in messages:
             if message.address in self._clients_addrs:
                 self._logger.info(
@@ -137,6 +191,10 @@ class MixServer(MixServerServicer):
                 if message.address not in self._final_messages:
                     self._final_messages[message.address] = []
                 self._final_messages[message.address].append(message.payload)
+                if self._enable_metrics:
+                    round_end_time = time.perf_counter_ns()
+                    if round == 0:
+                        self._metrics[self._id]["round_end_time"] = round_end_time
                 output_file = os.path.join(
                     self._output_dir,
                     f"{self._id}_round_{round}_{message.address.replace(':', '_')}.txt",
@@ -156,6 +214,15 @@ class MixServer(MixServerServicer):
                     )
 
     async def PollMessages(self, request, context):
+        """A gRPC API method for a client to pol messages.
+
+        Args:
+            request (PollMessagesRequest): gRPC request containing client address
+            context (_type_): gRPC context
+
+        Returns:
+            PollMessagesResponse: gRPC response containing the list of messages
+        """
         client_address = request.client_addr
         self._logger.info(f"Client '{client_address}' polling for messages.")
         payloads = self._final_messages.pop(client_address, [])
@@ -169,10 +236,10 @@ class MixServer(MixServerServicer):
         self._running = False
         async with self._cond:
             self._cond.notify()  # Wake up forwarding thread to check running flag
-        if self._server:
-            await self._server.stop(grace=5.0)
         if self._wait_future:
             await self._wait_future
+        if self._server:
+            await self._server.stop(grace=5.0)
         if os.path.exists(self._pubkey_path):
             os.remove(self._pubkey_path)
-        self._logger.warning("server stopped")
+        self._logger.info("server stopped")

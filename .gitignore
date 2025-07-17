@@ -9,6 +9,7 @@ wheels/
 # Virtual environments
 .venv
 .ruff_cache/
+.pytest_cache/
 .python-version
 *.key
 .vscode/
