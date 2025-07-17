@@ -142,7 +142,7 @@ class MixServer(MixServerServicer):
             # Store the message
             if request.round not in self._messages:
                 self._messages[request.round] = []
-                if request.round == 0:
+                if request.round == 0 and self._enable_metrics:
                     self._metrics[self._id]["round_start_time"] = received_time
             self._messages[request.round].append(message)
             self._logger.debug(
